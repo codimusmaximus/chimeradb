@@ -11,6 +11,25 @@ A batteries-included SQLite knowledge graph with vector embeddings for semantic 
 📦 **No Dependencies** - Pure SQLite, runs anywhere
 ⚡ **Fast** - In-memory or persistent, your choice
 
+## ⚠️ Important: Cypher Limitations
+
+**sqlite-graph** currently supports **basic Cypher queries only**. The following features are coming in v0.2.0 (Q1 2026):
+
+- ❌ Bidirectional relationships (`<-[r]-`, `-[r]-`)
+- ❌ Variable-length paths (`[r*1..3]`)
+- ❌ Complex WHERE expressions (AND, OR, NOT)
+- ❌ Aggregations (COUNT, SUM, AVG)
+- ❌ Property projection (`n.property`)
+- ❌ ORDER BY, SKIP, LIMIT
+
+**✅ Workaround:** Use SQL for complex queries (see [LIMITATIONS.md](LIMITATIONS.md) for examples)
+
+**✅ Currently supported:** Simple patterns like `MATCH (a)-[:REL]->(b) RETURN a`
+
+For detailed examples and SQL alternatives, see:
+- **[LIMITATIONS.md](LIMITATIONS.md)** - Comprehensive guide with workarounds
+- **[examples/03_advanced.py](examples/03_advanced.py)** - Hybrid SQL + Cypher patterns
+
 ## Quick Start
 
 ### Installation
@@ -386,5 +405,6 @@ Built on top of:
 **Quick Links:**
 - [Installation Guide](docs/installation.md)
 - [API Reference](docs/api.md)
+- [Cypher Limitations & Workarounds](LIMITATIONS.md) ⚠️
 - [Examples](examples/)
 - [FAQ](docs/faq.md)
