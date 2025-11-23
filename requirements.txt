@@ -1,0 +1,11 @@
+# Core dependencies
+numpy>=1.20.0
+
+# Optional: For automatic embedding generation
+sentence-transformers>=2.0.0  # Optional
+openai>=1.0.0  # Optional
+
+# Development dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=23.0.0
