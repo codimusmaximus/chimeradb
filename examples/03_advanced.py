@@ -271,19 +271,11 @@ print("\n" + "-" * 80)
 print("Combining Cypher pattern matching with SQL analytics")
 print("-" * 80)
 
-print("\n--- Query 1: Find 'Bridge Papers' (Cypher pattern + SQL analysis) ---")
+print("\n--- Query 1: Find 'Bridge Papers' (SQL analysis) ---")
 print("Papers that connect different research areas")
-
-# Use Cypher to find citation patterns
-cypher_query = """
-    MATCH (p1:Paper)-[:CITES]->(bridge:Paper)<-[:CITES]-(p2:Paper)
-    RETURN bridge
-"""
-print(f"\nCypher: {cypher_query.strip()}")
-print("(Pattern: papers cited by multiple other papers)")
-
-result = kg.conn.execute("SELECT cypher_execute(?)", (cypher_query,)).fetchone()
-cypher_data = json.loads(result[0]) if result else []
+print("\nNote: sqlite-graph doesn't support bidirectional Cypher patterns like:")
+print("      MATCH (p1)-[:CITES]->(bridge)<-[:CITES]-(p2)")
+print("      Using SQL instead for this type of query.")
 
 # Use SQL to analyze which are bridge papers (connect different fields)
 sql_query = """
@@ -329,19 +321,10 @@ print("\nCitation counts (within subgraph):")
 for title, field, count in results:
     print(f"  {count} citations | {title[:45]}")
 
-print("\n--- Query 3: Find Direct Citations (Cypher) ---")
+print("\n--- Query 3: Find Direct Citations (SQL) ---")
 print("What papers does Vision Transformer cite?")
-
-# Direct citation pattern
-cypher_query = """
-    MATCH (p1:Paper)-[:CITES]->(p2:Paper)
-    RETURN p1, p2
-"""
-print(f"\nCypher: {cypher_query.strip()}")
-print("(Note: Variable-length paths [:CITES*1..3] not yet supported)")
-
-result = kg.conn.execute("SELECT cypher_execute(?)", (cypher_query,)).fetchone()
-paths = json.loads(result[0]) if result else []
+print("\nNote: Using SQL for this query since sqlite-graph has limitations with")
+print("      returning multiple nodes and complex patterns.")
 
 # Use SQL to find what paper5 cites
 sql_query = """
@@ -381,9 +364,10 @@ print("   • Detected connected components (clusters vs islands)")
 print("   • Identified isolated research areas")
 
 print("\n3. Hybrid Queries")
-print("   • Cypher: Pattern matching (bridge papers, citation paths)")
-print("   • SQL: Aggregations (citation counts, rankings)")
-print("   • Combined for powerful analytics")
+print("   • Cypher: Simple directional patterns (A->B relationships)")
+print("   • SQL: Complex patterns, aggregations, multi-way joins")
+print("   • sqlite-graph limitation: no bidirectional Cypher patterns")
+print("   • Solution: Use SQL for complex graph queries")
 
 print("\n4. Real-World Applications")
 print("   • Research paper recommendations")
