@@ -65,8 +65,8 @@ Why start with Cypher?
 
 # Create first nodes with Cypher
 print("\nCreating initial nodes with Cypher...")
-kg.conn.execute('SELECT cypher_execute(\'CREATE (p:Person {name: "Alice", role: "Engineering Manager", department: "AI"})\')')
-kg.conn.execute('SELECT cypher_execute(\'CREATE (p:Person {name: "Bob", role: "Senior Engineer", department: "AI"})\')')
+kg.conn.execute("SELECT cypher_execute(?)", ("CREATE (p:Person {name: 'Alice', role: 'Engineering Manager', department: 'AI'})",))
+kg.conn.execute("SELECT cypher_execute(?)", ("CREATE (p:Person {name: 'Bob', role: 'Senior Engineer', department: 'AI'})",))
 kg.conn.commit()
 print("  ✓ Created Alice and Bob with Cypher")
 
@@ -138,9 +138,9 @@ print("  ✓ Created node 5: Eve (with Person label)")
 # Or use Cypher CREATE (automatically handles labels!)
 print("\n--- Alternative: Cypher CREATE ---")
 print("Cypher CREATE handles labels automatically:")
-print('  CREATE (p:Person {name: "Frank", role: "Analyst"})')
+print("  CREATE (p:Person {name: 'Frank', role: 'Analyst'})")
 
-kg.conn.execute('SELECT cypher_execute(\'CREATE (p:Person {name: "Frank", role: "Analyst"})\')')
+kg.conn.execute("SELECT cypher_execute(?)", ("CREATE (p:Person {name: 'Frank', role: 'Analyst'})",))
 kg.conn.commit()
 print("  ✓ Created Frank with Cypher (auto-labeled as Person)")
 
