@@ -70,7 +70,7 @@ from datetime import datetime as dt
 timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
 kg = KnowledgeGraph(db_path=f"monitoring_{timestamp}.db")
 
-print("✓ Graph initialized with auto-embeddings (all-MiniLM-L6-v2)")
+print("✓ Graph initialized with auto-embeddings (distilbert-base-uncased)")
 
 # ============================================================================
 # PART 2: Insert Server Data

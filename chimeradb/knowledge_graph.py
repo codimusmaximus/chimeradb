@@ -7,8 +7,14 @@ Powered by DuckDB for production-grade performance and reliability.
 
 import duckdb
 import json
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Callable
 import warnings
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 class KnowledgeGraph:
     """
@@ -23,7 +29,8 @@ class KnowledgeGraph:
     def __init__(
         self,
         db_path: str = ":memory:",
-        embedding_model: Optional[str] = "all-MiniLM-L6-v2",
+        embedding_model: Optional[str] = "distilbert-base-uncased",
+        embedding_function: Optional[Callable[[str], List[float]]] = None,
         auto_embed: bool = True
     ):
         """
@@ -31,29 +38,54 @@ class KnowledgeGraph:
 
         Args:
             db_path: Path to database file, or ":memory:" for in-memory
-            embedding_model: Sentence transformer model name, or None to disable
+            embedding_model: HuggingFace transformers model name (e.g., "distilbert-base-uncased"), or None to disable
+            embedding_function: Custom function that takes text and returns embedding vector
             auto_embed: Automatically generate embeddings for new nodes
         """
         self.db_path = db_path
-        self.auto_embed = auto_embed and (embedding_model is not None)
         self.embedding_model_name = embedding_model
-        self.embedder = None
+        self.tokenizer = None
+        self.model = None
+        self.embedding_function = embedding_function
         self.embedding_dim = None
 
-        # Initialize embedding model if requested
-        if embedding_model:
+        # Priority: custom function > model name > disable
+        if embedding_function is not None:
+            # Use custom embedding function
+            self.auto_embed = True
             try:
-                from sentence_transformers import SentenceTransformer
-                self.embedder = SentenceTransformer(embedding_model)
-                # Get embedding dimension
-                test_emb = self.embedder.encode("test")
+                # Detect embedding dimension by running a test
+                test_emb = embedding_function("test")
                 self.embedding_dim = len(test_emb)
-            except ImportError:
+            except Exception as e:
+                warnings.warn(f"Failed to test custom embedding function: {e}")
+                self.auto_embed = False
+        elif embedding_model:
+            # Use HuggingFace transformers
+            self.auto_embed = auto_embed
+            try:
+                if not TORCH_AVAILABLE:
+                    raise ImportError("PyTorch not available")
+
+                from transformers import AutoTokenizer, AutoModel
+                self.tokenizer = AutoTokenizer.from_pretrained(embedding_model)
+                self.model = AutoModel.from_pretrained(embedding_model)
+
+                # Get embedding dimension
+                test_emb = self._encode_text("test")
+                self.embedding_dim = len(test_emb)
+            except ImportError as e:
                 warnings.warn(
-                    "sentence-transformers not installed. Install with: "
-                    "pip install sentence-transformers"
+                    f"transformers or torch not installed. Install with: "
+                    f"pip install transformers torch. Error: {e}"
                 )
                 self.auto_embed = False
+            except Exception as e:
+                warnings.warn(f"Failed to load embedding model '{embedding_model}': {e}")
+                self.auto_embed = False
+        else:
+            # Embeddings disabled
+            self.auto_embed = False
 
         # Connect to DuckDB with HNSW persistence enabled
         config = {}
@@ -70,17 +102,29 @@ class KnowledgeGraph:
 
     def _setup_extensions(self):
         """Install and load DuckDB extensions."""
+        extensions_loaded = {"duckpgq": False, "vss": False}
+
+        # Try to load duckpgq
         try:
             self.conn.execute("INSTALL duckpgq FROM community")
             self.conn.execute("LOAD duckpgq")
+            extensions_loaded["duckpgq"] = True
         except Exception as e:
-            warnings.warn(f"Failed to load duckpgq extension: {e}")
+            raise RuntimeError(
+                f"Failed to load duckpgq extension. ChimeraDB requires duckpgq for "
+                f"graph queries. Error: {e}"
+            )
 
+        # Try to load vss
         try:
             self.conn.execute("INSTALL vss")
             self.conn.execute("LOAD vss")
+            extensions_loaded["vss"] = True
         except Exception as e:
-            warnings.warn(f"Failed to load vss extension: {e}")
+            raise RuntimeError(
+                f"Failed to load vss extension. ChimeraDB requires vss for "
+                f"vector similarity search. Error: {e}"
+            )
 
     def _init_schema(self):
         """Initialize database schema with nodes, edges, and property graph."""
@@ -130,9 +174,42 @@ class KnowledgeGraph:
                 )
             """)
         except Exception as e:
-            # Property graph might not be available if duckpgq failed to load
-            warnings.warn(f"Failed to create property graph: {e}")
-            pass
+            raise RuntimeError(
+                f"Failed to create property graph. This typically means duckpgq extension "
+                f"is not available. Error: {e}"
+            )
+
+    def _encode_text(self, text: str) -> List[float]:
+        """
+        Encode text using HuggingFace transformers with mean pooling.
+
+        Args:
+            text: Text to encode
+
+        Returns:
+            Embedding vector as list of floats
+        """
+        if not self.tokenizer or not self.model:
+            raise ValueError("No tokenizer or model available")
+
+        # Tokenize
+        inputs = self.tokenizer(
+            text,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=512
+        )
+
+        # Generate embeddings
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+
+        # Mean pooling
+        embeddings = outputs.last_hidden_state.mean(dim=1)
+
+        # Convert to list
+        return embeddings[0].tolist()
 
     def add_entity(
         self,
@@ -165,8 +242,13 @@ class KnowledgeGraph:
         should_embed = (auto_embed if auto_embed is not None else self.auto_embed)
         if should_embed and embedding is None and embed_field in properties:
             text = properties[embed_field]
-            if self.embedder and text:
-                embedding = self.embedder.encode(text).tolist()
+            if text:
+                # Use custom function if provided
+                if self.embedding_function:
+                    embedding = self.embedding_function(text)
+                # Otherwise use transformers
+                elif self.tokenizer and self.model:
+                    embedding = self._encode_text(text)
 
         # Insert or update node
         self.conn.execute("""
@@ -217,11 +299,14 @@ class KnowledgeGraph:
         Returns:
             List of matching nodes with similarity scores
         """
-        if not self.embedder:
-            raise ValueError("No embedding model configured")
+        if not self.tokenizer and not self.model and not self.embedding_function:
+            raise ValueError("No embedding model or function configured")
 
-        # Generate query embedding
-        query_emb = self.embedder.encode(query).tolist()
+        # Generate query embedding using custom function or transformers
+        if self.embedding_function:
+            query_emb = self.embedding_function(query)
+        elif self.tokenizer and self.model:
+            query_emb = self._encode_text(query)
 
         # Build label filter
         label_filter = ""

@@ -55,7 +55,7 @@ timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 kg = KnowledgeGraph(db_path=f"org_semantic_{timestamp}.db")
 
 print("✓ Database created")
-print("✓ Embeddings auto-enabled (using all-MiniLM-L6-v2 by default)")
+print("✓ Embeddings auto-enabled (using distilbert-base-uncased by default)")
 
 # ============================================================================
 # Step 2: Add Entities with Python API
