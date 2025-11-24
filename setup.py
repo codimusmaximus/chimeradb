@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="chimeradb",
-    version="0.1.0",
+    version="0.2.21",
     author="Alexander Leirvåg",
     author_email="alexander@prismeta.com",
     description="Knowledge graph + vector search + SQL analytics powered by DuckDB",
