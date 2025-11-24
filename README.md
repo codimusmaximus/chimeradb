@@ -238,6 +238,7 @@ Each step informs the next. The LLM can't query timeseries data without knowing 
 - **[02_basic.py](examples/02_basic.py)**: Semantic search + graph traversal + SQL analytics
 - **[03_advanced.py](examples/03_advanced.py)**: Research paper recommendations with graph analysis
 - **[04_industrial_iot.py](examples/04_industrial_iot.py)**: Industrial IoT - Smart building heating monitoring (demonstrates the full LLM reasoning workflow)
+  - [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/codimusmaximus/chimeradb/blob/main/examples/industrial_iot_colab.ipynb) Try it in Google Colab!
 
 ## Requirements
 
