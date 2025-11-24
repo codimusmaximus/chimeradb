@@ -31,7 +31,8 @@ class KnowledgeGraph:
         db_path: str = ":memory:",
         embedding_model: Optional[str] = "distilbert-base-uncased",
         embedding_function: Optional[Callable[[str], List[float]]] = None,
-        auto_embed: bool = True
+        auto_embed: bool = True,
+        distance_metric: str = "cosine"
     ):
         """
         Initialize Knowledge Graph with DuckDB backend.
@@ -41,6 +42,7 @@ class KnowledgeGraph:
             embedding_model: HuggingFace transformers model name (e.g., "distilbert-base-uncased"), or None to disable
             embedding_function: Custom function that takes text and returns embedding vector
             auto_embed: Automatically generate embeddings for new nodes
+            distance_metric: Distance metric for similarity search: "cosine", "l2sq", or "ip"
         """
         self.db_path = db_path
         self.embedding_model_name = embedding_model
@@ -48,6 +50,7 @@ class KnowledgeGraph:
         self.model = None
         self.embedding_function = embedding_function
         self.embedding_dim = None
+        self.distance_metric = distance_metric.lower()
 
         # Priority: custom function > model name > disable
         if embedding_function is not None:
@@ -87,12 +90,10 @@ class KnowledgeGraph:
             # Embeddings disabled
             self.auto_embed = False
 
-        # Connect to DuckDB with HNSW persistence enabled
-        config = {}
-        if db_path != ":memory:":
-            config['hnsw_enable_experimental_persistence'] = 'true'
-
-        self.conn = duckdb.connect(db_path, config=config)
+        # Connect to DuckDB
+        # NOTE: We do NOT enable hnsw_enable_experimental_persistence because it causes
+        # segfaults when reopening databases. HNSW indexes are rebuilt on each connection.
+        self.conn = duckdb.connect(db_path)
 
         # Install and load extensions
         self._setup_extensions()
@@ -155,9 +156,10 @@ class KnowledgeGraph:
         # Create HNSW index for vector similarity if embeddings enabled
         if self.embedding_dim:
             try:
-                self.conn.execute("""
+                self.conn.execute(f"""
                     CREATE INDEX IF NOT EXISTS nodes_embedding_idx
                     ON nodes USING HNSW (embedding)
+                    WITH (metric = '{self.distance_metric}')
                 """)
             except Exception:
                 pass  # Index might already exist
@@ -297,7 +299,7 @@ class KnowledgeGraph:
             labels: Optional filter by node labels
 
         Returns:
-            List of matching nodes with similarity scores
+            List of matching nodes with similarity scores (1.0 = identical, 0.0 = unrelated)
         """
         if not self.tokenizer and not self.model and not self.embedding_function:
             raise ValueError("No embedding model or function configured")
@@ -314,16 +316,33 @@ class KnowledgeGraph:
             label_conditions = " OR ".join([f"labels LIKE '%{label}%'" for label in labels])
             label_filter = f"WHERE ({label_conditions})"
 
+        # Select distance function based on metric
+        if self.distance_metric == "cosine":
+            distance_func = "array_cosine_distance"
+            # Cosine distance: 0 = identical, 2 = opposite
+            # Convert to similarity: 1.0 = identical, 0.0 = opposite
+            similarity_expr = f"1.0 - ({distance_func}(embedding, ?::FLOAT[{self.embedding_dim}]) / 2.0)"
+        elif self.distance_metric == "ip":
+            distance_func = "array_negative_inner_product"
+            # Negative inner product: more negative = less similar
+            # Convert to similarity (normalized for typical embedding ranges)
+            similarity_expr = f"1.0 / (1.0 + ABS({distance_func}(embedding, ?::FLOAT[{self.embedding_dim}])))"
+        else:  # l2sq
+            distance_func = "array_distance"
+            # L2 squared distance: 0 = identical, larger = more different
+            # Convert to similarity (normalized)
+            similarity_expr = f"1.0 / (1.0 + {distance_func}(embedding, ?::FLOAT[{self.embedding_dim}]))"
+
         # Search with vector similarity
         results = self.conn.execute(f"""
             SELECT
                 id,
                 labels,
                 properties,
-                1.0 - (array_distance(embedding, ?::FLOAT[{self.embedding_dim}]) / 10.0) as similarity
+                {similarity_expr} as similarity
             FROM nodes
             {label_filter}
-            ORDER BY array_distance(embedding, ?::FLOAT[{self.embedding_dim}])
+            ORDER BY {distance_func}(embedding, ?::FLOAT[{self.embedding_dim}])
             LIMIT ?
         """, [query_emb, query_emb, top_k]).fetchall()
 
@@ -332,7 +351,7 @@ class KnowledgeGraph:
                 "id": row[0],
                 "labels": json.loads(row[1]) if row[1] else [],
                 "properties": json.loads(row[2]) if row[2] else {},
-                "similarity": max(0.0, row[3]) if row[3] else 0.0
+                "similarity": max(0.0, min(1.0, row[3])) if row[3] else 0.0
             }
             for row in results
         ]
