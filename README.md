@@ -6,6 +6,7 @@ The only database that combines vector embeddings, property graphs (SQL/PGQ), an
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/codimusmaximus/chimeradb/blob/main/examples/getting_started_colab.ipynb)
 
 [Examples](examples/) • [Docs](docs/)
 
