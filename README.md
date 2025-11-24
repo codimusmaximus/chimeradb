@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="ChimeraDB Logo" width="600"/>
+  <img src="logo.png" alt="ChimeraDB Logo" width="100%"/>
 </p>
 
 # ChimeraDB
