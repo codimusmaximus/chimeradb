@@ -2,7 +2,7 @@
 set -e
 
 echo "========================================="
-echo "SQLite Knowledge Graph Setup"
+echo "🔥 ChimeraDB Setup"
 echo "========================================="
 
 # Detect platform
@@ -11,42 +11,55 @@ ARCH="$(uname -m)"
 
 echo "Detected: $OS $ARCH"
 
-# Create virtual environment
+# Check for uv, install if needed
+if ! command -v uv &> /dev/null; then
+    echo ""
+    echo "Installing uv (fast Python package manager)..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.cargo/bin:$PATH"
+fi
+
+# Create virtual environment with uv
 echo ""
-echo "[1/5] Creating virtual environment..."
-if [ ! -d "venv" ]; then
-    python3 -m venv venv
+echo "[1/6] Creating virtual environment with uv..."
+if [ ! -d ".venv" ]; then
+    uv venv .venv
     echo "✓ Virtual environment created"
 else
     echo "✓ Virtual environment already exists"
 fi
 
 # Activate virtual environment
-source venv/bin/activate
+source .venv/bin/activate
 
 # Install Python dependencies
 echo ""
-echo "[2/5] Installing Python dependencies..."
-pip install --upgrade pip -q
-pip install -r requirements.txt -q
+echo "[2/6] Installing Python dependencies..."
+uv pip install -r requirements.txt
 echo "✓ Dependencies installed"
+
+# Install package in editable mode
+echo ""
+echo "[3/6] Installing chimeradb package..."
+uv pip install -e .
+echo "✓ Package installed in editable mode"
 
 # Create extensions directory
 echo ""
-echo "[3/5] Setting up extensions directory..."
+echo "[4/6] Setting up extensions directory..."
 mkdir -p extensions
 echo "✓ Extensions directory created"
 
 # Download sqlite-graph extension
 echo ""
-echo "[4/5] Downloading sqlite-graph extension..."
+echo "[5/6] Downloading sqlite-graph extension..."
 
 if [ "$OS" = "Darwin" ]; then
     # macOS
     if [ "$ARCH" = "arm64" ]; then
-        GRAPH_EXT="extensions/libgraph.dylib"
+        GRAPH_EXT="chimeradb/extensions/libgraph.dylib"
     else
-        GRAPH_EXT="extensions/libgraph.dylib"
+        GRAPH_EXT="chimeradb/extensions/libgraph.dylib"
     fi
 
     if [ ! -f "$GRAPH_EXT" ]; then
@@ -61,7 +74,7 @@ if [ "$OS" = "Darwin" ]; then
         cd ../sqlite-graph
         make clean && make
         cd -
-        cp ../sqlite-graph/build/libgraph.dylib extensions/
+        cp ../sqlite-graph/build/libgraph.dylib chimeradb/extensions/
         echo "  ✓ Built and copied libgraph.dylib"
     else
         echo "  ✓ libgraph.dylib already exists"
@@ -69,7 +82,7 @@ if [ "$OS" = "Darwin" ]; then
 
 elif [ "$OS" = "Linux" ]; then
     # Linux
-    GRAPH_EXT="extensions/libgraph.so"
+    GRAPH_EXT="chimeradb/extensions/libgraph.so"
 
     if [ ! -f "$GRAPH_EXT" ]; then
         echo "  Building sqlite-graph from source..."
@@ -81,7 +94,7 @@ elif [ "$OS" = "Linux" ]; then
         cd ../sqlite-graph
         make clean && make
         cd -
-        cp ../sqlite-graph/build/libgraph.so extensions/
+        cp ../sqlite-graph/build/libgraph.so chimeradb/extensions/
         echo "  ✓ Built and copied libgraph.so"
     else
         echo "  ✓ libgraph.so already exists"
@@ -92,16 +105,16 @@ fi
 
 # Download sqlite-vector extension
 echo ""
-echo "[5/5] Downloading sqlite-vector extension..."
+echo "[6/6] Downloading sqlite-vector extension..."
 
 if [ "$OS" = "Darwin" ]; then
     # macOS
     if [ "$ARCH" = "arm64" ]; then
         VECTOR_URL="https://github.com/sqliteai/sqlite-vector/releases/download/v0.9.52/vector-macos-arm64.dylib"
-        VECTOR_EXT="extensions/vector.dylib"
+        VECTOR_EXT="chimeradb/extensions/vector.dylib"
     else
         VECTOR_URL="https://github.com/sqliteai/sqlite-vector/releases/download/v0.9.52/vector-macos-x86_64.dylib"
-        VECTOR_EXT="extensions/vector.dylib"
+        VECTOR_EXT="chimeradb/extensions/vector.dylib"
     fi
 
     if [ ! -f "$VECTOR_EXT" ] || [ $(stat -f%z "$VECTOR_EXT" 2>/dev/null || echo 0) -lt 1000 ]; then
@@ -130,7 +143,7 @@ if [ "$OS" = "Darwin" ]; then
 elif [ "$OS" = "Linux" ]; then
     # Linux
     VECTOR_URL="https://github.com/sqliteai/sqlite-vector/releases/download/v0.9.52/vector-linux-x86_64.so"
-    VECTOR_EXT="extensions/vector.so"
+    VECTOR_EXT="chimeradb/extensions/vector.so"
 
     if [ ! -f "$VECTOR_EXT" ] || [ $(stat -c%s "$VECTOR_EXT" 2>/dev/null || echo 0) -lt 1000 ]; then
         echo "  Downloading from $VECTOR_URL..."
@@ -172,11 +185,11 @@ try:
 
     # Determine extension paths
     if sys.platform == "darwin":
-        graph_ext = "extensions/libgraph.dylib"
-        vector_ext = "extensions/vector.dylib"
+        graph_ext = "chimeradb/extensions/libgraph.dylib"
+        vector_ext = "chimeradb/extensions/vector.dylib"
     else:
-        graph_ext = "extensions/libgraph.so"
-        vector_ext = "extensions/vector.so"
+        graph_ext = "chimeradb/extensions/libgraph.so"
+        vector_ext = "chimeradb/extensions/vector.so"
 
     # Test graph extension
     if os.path.exists(graph_ext):
@@ -213,6 +226,6 @@ echo "Setup complete!"
 echo "========================================="
 echo ""
 echo "To get started:"
-echo "  source venv/bin/activate"
-echo "  python examples/01_quickstart.py"
+echo "  source .venv/bin/activate"
+echo "  python3 examples/01_getting_started.py"
 echo ""

@@ -30,7 +30,7 @@ What Makes This "Advanced"?
 import sys
 sys.path.insert(0, '..')
 
-from sqlite_kg import KnowledgeGraph
+from chimeradb import KnowledgeGraph
 import json
 from collections import defaultdict, deque
 
@@ -43,14 +43,9 @@ print("=" * 80)
 # ============================================================================
 print("\n[1/5] Creating Research Paper Knowledge Graph...")
 
-kg = KnowledgeGraph(
-    db_path="research_papers.db",
-    embedding_model="all-MiniLM-L6-v2",
-    embedding_dim=384,
-    auto_embed=True
-)
+kg = KnowledgeGraph(db_path="research_papers.db")
 
-print("✓ Knowledge graph initialized")
+print("✓ Knowledge graph initialized with auto-embeddings")
 
 # ============================================================================
 # PART 2: Insert Papers and Citations

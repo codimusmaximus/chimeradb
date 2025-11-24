@@ -32,6 +32,9 @@ env/
 *.sqlite
 *.sqlite3
 
+# Development artifacts
+dev/
+
 # IDE
 .vscode/
 .idea/

@@ -44,7 +44,7 @@ We'll build a system monitoring graph:
 import sys
 sys.path.insert(0, '..')
 
-from sqlite_kg import KnowledgeGraph
+from chimeradb import KnowledgeGraph
 import json
 import random
 from datetime import datetime, timedelta
@@ -64,15 +64,10 @@ Why embeddings?
   • Similar meanings = similar vectors
   • Find relevant data based on MEANING, not just keywords""")
 
-# Create graph with auto-embedding enabled
-kg = KnowledgeGraph(
-    db_path="monitoring.db",
-    embedding_model="all-MiniLM-L6-v2",  # Fast, small model
-    embedding_dim=384,
-    auto_embed=True
-)
+# Create graph with auto-embedding enabled (by default!)
+kg = KnowledgeGraph(db_path="monitoring.db")
 
-print("✓ Graph initialized with embedding model: all-MiniLM-L6-v2")
+print("✓ Graph initialized with auto-embeddings (all-MiniLM-L6-v2)")
 
 # ============================================================================
 # PART 2: Insert Server Data

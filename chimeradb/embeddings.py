@@ -74,7 +74,7 @@ class EmbeddingGenerator:
     def _generate_single(self, text: str) -> List[float]:
         """Generate embedding for single text"""
         if self.model_type == "sentence-transformer":
-            embedding = self.model.encode(text, convert_to_numpy=True)
+            embedding = self.model.encode(text, convert_to_numpy=True, normalize_embeddings=False)
             return embedding.tolist()
 
         elif self.model_type == "openai":
@@ -86,7 +86,7 @@ class EmbeddingGenerator:
     def _generate_batch(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for multiple texts"""
         if self.model_type == "sentence-transformer":
-            embeddings = self.model.encode(texts, convert_to_numpy=True)
+            embeddings = self.model.encode(texts, convert_to_numpy=True, normalize_embeddings=False)
             return embeddings.tolist()
 
         elif self.model_type == "openai":

@@ -24,29 +24,36 @@ class KnowledgeGraph:
     def __init__(
         self,
         db_path: str = ":memory:",
-        embedding_model: Optional[str] = None,
+        embedding_model: Optional[str] = "all-MiniLM-L6-v2",
         embedding_dim: int = 384,
-        auto_embed: bool = False,
+        auto_embed: Optional[bool] = None,
+        embed_field: Optional[str] = None,
     ):
         """
         Initialize a knowledge graph.
 
         Args:
             db_path: Path to SQLite database (":memory:" for in-memory)
-            embedding_model: Model name for auto-embedding (optional)
-            embedding_dim: Dimension of embedding vectors
-            auto_embed: Automatically generate embeddings on insert
+            embedding_model: Model name for auto-embedding (default: "all-MiniLM-L6-v2", None to disable)
+            embedding_dim: Dimension of embedding vectors (default: 384 for all-MiniLM-L6-v2)
+            auto_embed: Auto-generate embeddings on insert (defaults to True if embedding_model is set)
+            embed_field: Field to use for embeddings (auto-detects if None: text, bio, description, name)
         """
         self.db_path = db_path
         self.embedding_dim = embedding_dim
-        self.auto_embed = auto_embed
         self.embedding_model = embedding_model
+        self.embed_field = embed_field
 
-        # Initialize embedding generator if requested
+        # Auto-embed defaults to True if embedding_model is provided
+        if auto_embed is None:
+            self.auto_embed = embedding_model is not None
+        else:
+            self.auto_embed = auto_embed
+
+        # Initialize embedding generator if embedding model provided
         self.embedder = None
-        if auto_embed and embedding_model:
+        if embedding_model:
             from .embeddings import EmbeddingGenerator
-
             self.embedder = EmbeddingGenerator(embedding_model)
 
         # Connect to database
@@ -70,13 +77,13 @@ class KnowledgeGraph:
             vector_ext = "extensions/vector"
 
         # Check if extensions exist
-        ext_dir = Path(__file__).parent.parent / "extensions"
+        ext_dir = Path(__file__).parent / "extensions"
 
         # Try relative path first, then absolute
         possible_paths = [
             ext_dir,
             Path.cwd() / "extensions",
-            Path(__file__).parent.parent.parent / "extensions",
+            Path.cwd() / "chimeradb" / "extensions",
         ]
 
         graph_loaded = False
@@ -272,21 +279,18 @@ class KnowledgeGraph:
         # Generate query embedding
         query_embedding = self.embedder.generate(query)
 
-        # Ensure vector quantization table is built
-        try:
-            self.conn.execute("SELECT vector_quantize('node_embeddings', 'embedding')")
-        except sqlite3.OperationalError:
-            # Already quantized
-            pass
+        # Rebuild quantization index before searching
+        self.conn.execute("SELECT vector_quantize('node_embeddings', 'embedding')")
+        self.conn.commit()
 
-        # Search using vector similarity on separate embeddings table
+        # Search using vector similarity
         results = self.conn.execute(
             """
             SELECT n.id, n.properties, v.distance
             FROM graph_nodes n
             JOIN node_embeddings e ON n.id = e.node_id
-            JOIN vector_quantize_scan('node_embeddings', 'embedding', ?, ?) v
-            ON e.rowid = v.rowid
+            JOIN vector_quantize_scan('node_embeddings', 'embedding', vector_as_f32(?), ?) v
+            ON e.node_id = v.rowid
             ORDER BY v.distance ASC
             """,
             (json.dumps(query_embedding), top_k),
@@ -295,7 +299,10 @@ class KnowledgeGraph:
         # Convert to list of dicts
         output = []
         for node_id, props_json, distance in results:
-            similarity = 1.0 - distance  # Convert distance to similarity
+            # For L2 distance, smaller is better (0 = identical)
+            # Convert to similarity score (0-1 range, 1 = identical)
+            # Use exponential decay for large distances
+            similarity = 1.0 / (1.0 + (distance / 100.0))
 
             if min_similarity and similarity < min_similarity:
                 continue
@@ -311,6 +318,96 @@ class KnowledgeGraph:
             )
 
         return output
+
+    def generate_embeddings(
+        self,
+        node_ids: Optional[List[int]] = None,
+        field: Optional[str] = None,
+        overwrite: bool = False
+    ) -> int:
+        """
+        Generate embeddings for nodes.
+
+        Args:
+            node_ids: List of node IDs to generate embeddings for (None = all nodes)
+            field: Property field to use for embedding (auto-detects if None)
+            overwrite: Whether to overwrite existing embeddings
+
+        Returns:
+            Number of embeddings generated
+
+        Example:
+            # Generate embeddings for all nodes using 'bio' field
+            kg.generate_embeddings(field='bio')
+
+            # Generate for specific nodes
+            kg.generate_embeddings(node_ids=[1, 2, 3], field='description')
+
+            # Auto-detect field (tries: text, bio, description, name)
+            kg.generate_embeddings()
+        """
+        if not self.embedder:
+            raise RuntimeError(
+                "Embedding model not configured. "
+                "Initialize with embedding_model parameter."
+            )
+
+        # Build query to get nodes
+        if node_ids:
+            placeholders = ','.join(['?'] * len(node_ids))
+            query = f"SELECT id, properties FROM graph_nodes WHERE id IN ({placeholders})"
+            nodes = self.conn.execute(query, node_ids).fetchall()
+        else:
+            nodes = self.conn.execute("SELECT id, properties FROM graph_nodes").fetchall()
+
+        count = 0
+        for node_id, props_json in nodes:
+            # Skip if embedding already exists and overwrite=False
+            if not overwrite:
+                existing = self.conn.execute(
+                    "SELECT 1 FROM node_embeddings WHERE node_id = ?",
+                    (node_id,)
+                ).fetchone()
+                if existing:
+                    continue
+
+            # Parse properties
+            props = json.loads(props_json) if props_json else {}
+
+            # Get text to embed
+            if field:
+                text = props.get(field, '')
+            else:
+                # Auto-detect field: try common fields in order
+                text = (
+                    props.get('text') or
+                    props.get('bio') or
+                    props.get('description') or
+                    props.get('name') or
+                    ''
+                )
+
+            if not text:
+                continue
+
+            # Generate embedding
+            embedding = self.embedder.generate(str(text))
+
+            # Insert or replace embedding
+            if overwrite:
+                self.conn.execute(
+                    "DELETE FROM node_embeddings WHERE node_id = ?",
+                    (node_id,)
+                )
+
+            self.conn.execute(
+                "INSERT INTO node_embeddings (node_id, embedding) VALUES (?, vector_as_f32(?))",
+                (node_id, json.dumps(embedding))
+            )
+            count += 1
+
+        self.conn.commit()
+        return count
 
     def query(self, sql: str, params: Optional[Tuple] = None) -> List[Tuple]:
         """
@@ -637,6 +734,112 @@ class KnowledgeGraph:
                 for e in edges
             ]
         }
+
+    def _auto_embed_node(self, node_id: int):
+        """
+        Internal method to auto-generate embedding for a node.
+
+        Args:
+            node_id: ID of the node to embed
+        """
+        if not self.auto_embed or not self.embedder:
+            return
+
+        # Get node properties
+        result = self.conn.execute(
+            "SELECT properties FROM graph_nodes WHERE id = ?",
+            (node_id,)
+        ).fetchone()
+
+        if not result or not result[0]:
+            return
+
+        props = json.loads(result[0])
+
+        # Get text to embed
+        if self.embed_field:
+            text = props.get(self.embed_field, '')
+        else:
+            # Auto-detect field
+            text = (
+                props.get('text') or
+                props.get('bio') or
+                props.get('description') or
+                props.get('name') or
+                ''
+            )
+
+        if not text:
+            return
+
+        # Generate and insert embedding
+        embedding = self.embedder.generate(str(text))
+        self.conn.execute(
+            "INSERT INTO node_embeddings (node_id, embedding) VALUES (?, vector_as_f32(?))",
+            (node_id, json.dumps(embedding))
+        )
+
+    def execute(self, sql: str, params: Optional[Tuple] = None):
+        """
+        Execute SQL with auto-embedding support.
+
+        Args:
+            sql: SQL statement
+            params: Optional parameters
+
+        Returns:
+            Cursor object
+
+        Example:
+            kg.execute("INSERT INTO graph_nodes (labels, properties) VALUES (?, ?)",
+                      (json.dumps(['Person']), json.dumps({'name': 'Alice'})))
+        """
+        cursor = self.conn.execute(sql, params) if params else self.conn.execute(sql)
+
+        # Auto-embed if this was an INSERT into graph_nodes
+        if self.auto_embed and self.embedder and sql.strip().upper().startswith('INSERT INTO GRAPH_NODES'):
+            if cursor.lastrowid:
+                self._auto_embed_node(cursor.lastrowid)
+
+        return cursor
+
+    def cypher(self, query: str, auto_commit: bool = True):
+        """
+        Execute Cypher query with auto-embedding support.
+
+        Args:
+            query: Cypher query string
+            auto_commit: Automatically commit after execution
+
+        Returns:
+            Cursor object
+
+        Example:
+            kg.cypher("CREATE (p:Person {name: 'Alice', bio: 'CEO'})")
+        """
+        # Get max ID before execution
+        max_id_before = self.conn.execute("SELECT COALESCE(MAX(id), 0) FROM graph_nodes").fetchone()[0]
+
+        # Execute Cypher
+        cursor = self.conn.execute("SELECT cypher_execute(?)", (query,))
+
+        # Auto-embed new nodes if CREATE was used
+        if self.auto_embed and self.embedder and 'CREATE' in query.upper():
+            # Get new node IDs
+            max_id_after = self.conn.execute("SELECT COALESCE(MAX(id), 0) FROM graph_nodes").fetchone()[0]
+
+            if max_id_after > max_id_before:
+                for node_id in range(max_id_before + 1, max_id_after + 1):
+                    self._auto_embed_node(node_id)
+
+        if auto_commit:
+            self.conn.commit()
+
+        return cursor
+
+    def commit(self):
+        """Commit the current transaction."""
+        self.conn.commit()
 
     def close(self):
         """Close the database connection"""

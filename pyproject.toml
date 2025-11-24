@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chimeradb"
+version = "0.1.0"
+description = "Knowledge graph + vector search + SQL analytics in SQLite"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+authors = [
+    {name = "Alexander Leirvåg", email = "alexander@prismeta.com"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "numpy>=1.20.0",
+    "sentence-transformers>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/codimusmaximus/chimeradb"
+Documentation = "https://github.com/codimusmaximus/chimeradb/tree/main/docs"
+Repository = "https://github.com/codimusmaximus/chimeradb"
+Issues = "https://github.com/codimusmaximus/chimeradb/issues"
+
+[tool.setuptools]
+packages = ["chimeradb"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+chimeradb = ["extensions/*.dylib", "extensions/*.so"]
