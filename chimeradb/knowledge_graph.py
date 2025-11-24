@@ -7,7 +7,7 @@ Powered by DuckDB for production-grade performance and reliability.
 
 import duckdb
 import json
-from typing import List, Dict, Any, Optional, Tuple, Callable
+from typing import List, Dict, Any, Optional, Tuple, Callable, Union
 import warnings
 
 try:
@@ -220,7 +220,7 @@ class KnowledgeGraph:
         labels: Optional[List[str]] = None,
         embedding: Optional[List[float]] = None,
         auto_embed: Optional[bool] = None,
-        embed_field: str = "text"
+        embed_field: Optional[Union[str, List[str]]] = None
     ) -> str:
         """
         Add a node to the graph.
@@ -231,7 +231,10 @@ class KnowledgeGraph:
             labels: List of labels/types for the node
             embedding: Pre-computed embedding vector
             auto_embed: Override default auto_embed setting
-            embed_field: Property field to use for embedding generation
+            embed_field: Property field(s) to use for embedding generation.
+                        - None (default): concatenate all string values
+                        - str: use single field (e.g., "description")
+                        - List[str]: concatenate specific fields (e.g., ["title", "abstract"])
 
         Returns:
             entity_id
@@ -242,8 +245,34 @@ class KnowledgeGraph:
 
         # Generate embedding if requested
         should_embed = (auto_embed if auto_embed is not None else self.auto_embed)
-        if should_embed and embedding is None and embed_field in properties:
-            text = properties[embed_field]
+        if should_embed and embedding is None:
+            # Determine text to embed
+            text = None
+
+            if embed_field is None:
+                # Default: concatenate all string values
+                text_parts = []
+                for key, value in sorted(properties.items()):
+                    if isinstance(value, str) and value.strip():
+                        text_parts.append(value)
+                text = " ".join(text_parts) if text_parts else None
+
+            elif isinstance(embed_field, str):
+                # Single field specified
+                if embed_field in properties:
+                    text = properties[embed_field]
+
+            elif isinstance(embed_field, list):
+                # Multiple fields specified
+                text_parts = []
+                for field in embed_field:
+                    if field in properties and isinstance(properties[field], str):
+                        value = properties[field].strip()
+                        if value:
+                            text_parts.append(value)
+                text = " ".join(text_parts) if text_parts else None
+
+            # Generate embedding from text
             if text:
                 # Use custom function if provided
                 if self.embedding_function:
