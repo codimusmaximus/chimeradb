@@ -249,7 +249,7 @@ Each step informs the next. The LLM can't query timeseries data without knowing 
 
 - Python 3.8+
 - DuckDB 1.1.3+ (automatically installed with chimeradb)
-- `sentence-transformers` (for embeddings, auto-installed)
+- `transformers` and `torch` (for embeddings, auto-installed)
 
 ## Documentation
 
