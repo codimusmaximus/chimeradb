@@ -152,44 +152,85 @@ ChimeraDB automatically installs these DuckDB extensions:
 
 ## How LLMs Use ChimeraDB
 
-LLMs can reason iteratively by combining three capabilities:
+**The Problem**: Getting an LLM to answer data-driven questions is hard—not because you lack data, but because the LLM doesn't know *what data exists* or *where it lives*.
 
-**1. RAG (Semantic Search)** → Find relevant starting points
+**Example Question**: *"Which rooms in Building A are using too much heating?"*
+
+To answer this, the LLM needs to know about:
+- Power consumption data and temperature readings
+- Physical layout (sensors per room, rooms per building)
+- Context (which rooms should be heated vs. garages/outdoors)
+- How to define "overuse" and calculate baselines
+
+Traditional approaches fail because they treat data as documents to search. But you can't search effectively if you don't understand the structure of what you're searching for.
+
+**The Solution**: Use ChimeraDB as a knowledge graph that captures:
+1. What information exists (ontology/schema)
+2. What specific things exist (entities/instances)
+3. How they're connected (relationships)
+4. Where the data lives (data sources)
+
+### The LLM Reasoning Workflow
+
+**Step 1: Understand What Exists** (RAG on Knowledge Graph)
 ```python
-# Find papers related to "transformer attention mechanisms"
-papers = kg.search("transformer attention mechanisms", top_k=5)
-paper_ids = [p['id'] for p in papers]  # ['paper_123', 'paper_456', ...]
+# LLM searches the knowledge graph for relevant concepts
+concepts = kg.search("heating power consumption room sensor", top_k=10)
+# Finds: Building, Room, PowerSensor, TemperatureSensor, Timeseries
 ```
 
-**2. Graph Traversal** → Gather context by following relationships
+**Step 2: Find Specific Entities** (Graph Traversal)
 ```python
-# For each relevant paper, find authors, citations, and related work
-for paper_id in paper_ids:
-    authors = kg.traverse(paper_id, direction="outgoing", relation_type="AUTHORED_BY")
-    citations = kg.traverse(paper_id, direction="incoming", relation_type="CITES")
-    # Now we have: similar papers + their authors + who cited them
+# Traverse from Building A to find all rooms and their sensors
+building_a_rooms = kg.traverse("building_a", direction="outgoing", relation_type="CONTAINS")
+# Returns: [{'id': 'office_201', 'type': 'Room'}, {'id': 'garage', 'type': 'Room'}, ...]
+
+# For each room, get its power sensors
+sensors = []
+for room in building_a_rooms:
+    room_sensors = kg.traverse(room['id'], direction="outgoing", relation_type="MONITORED_BY")
+    sensors.extend(room_sensors)
+# Now we know: Office 201 → PWR-201-A, Garage → PWR-GAR-01, etc.
 ```
 
-**3. SQL Analytics** → Aggregate insights and make decisions
+**Step 3: Query Actual Data** (SQL Analytics)
 ```python
-# Which author has the most cited papers on this topic?
-results = kg.query("""
+# Get sensor metadata and baseline expectations from knowledge graph
+sensor_metadata = kg.query("""
     SELECT
-        json_extract_string(a.properties, 'name') as author,
-        COUNT(DISTINCT c.from_id) as citation_count
-    FROM nodes p
-    JOIN edges authored ON authored.from_id = p.id
-    JOIN nodes a ON a.id = authored.to_id
-    JOIN edges c ON c.to_id = p.id
-    WHERE p.id IN (?, ?, ?, ?, ?)  -- Our relevant papers
-    GROUP BY author
-    ORDER BY citation_count DESC
-    LIMIT 1
-""", paper_ids)
-# Result: "Attention is All You Need" authors → LLM knows who to follow
+        s.id as sensor_id,
+        json_extract_string(s.properties, 'room_name') as room,
+        json_extract_string(s.properties, 'baseline_watts') as baseline,
+        json_extract_string(s.properties, 'room_type') as room_type
+    FROM nodes s
+    WHERE s.id IN ('PWR-201-A', 'PWR-GAR-01', 'PWR-SRV-01')
+""")
+
+# Now query the actual timeseries data
+# (This would typically go to a separate timeseries DB, but could be in ChimeraDB too)
+usage_data = external_db.query("""
+    SELECT sensor_id, AVG(power_watts) as avg_power
+    FROM power_readings
+    WHERE sensor_id IN ('PWR-201-A', 'PWR-GAR-01', 'PWR-SRV-01')
+      AND timestamp > NOW() - INTERVAL '7 days'
+    GROUP BY sensor_id
+""")
+
+# Compare actual usage to baselines
+for room in usage_data:
+    baseline = sensor_metadata[room['sensor_id']]['baseline']
+    if room['avg_power'] > baseline:
+        print(f"{room['room']}: {room['avg_power']}W (baseline: {baseline}W) ⚠️ OVERUSE")
 ```
 
-**Why this matters**: Each step informs the next. RAG finds relevant content, graphs provide context, SQL enables reasoning. The LLM can loop through this process, refining its understanding with each iteration.
+**Result**: "Office 201 is using 45W more than expected (95W vs 50W baseline). The Garage is correctly unheated."
+
+**Why This Works**:
+- **RAG** finds what concepts and entities exist (semantic search over knowledge graph)
+- **Graph traversal** discovers relationships (Building → Rooms → Sensors)
+- **SQL analytics** aggregates data and compares to baselines (actual computation)
+
+Each step informs the next. The LLM can't query timeseries data without knowing which sensors exist. It can't find sensors without knowing which rooms exist. It can't interpret results without knowing baseline expectations. The knowledge graph makes all this discoverable.
 
 ## Examples
 
