@@ -66,18 +66,40 @@ class KnowledgeGraph:
         # Initialize schema
         self._init_schema()
 
+    def _download_extension(self, ext_dir: Path, name: str, url: str) -> bool:
+        """Download extension if not present"""
+        try:
+            import urllib.request
+            ext_dir.mkdir(parents=True, exist_ok=True)
+            ext_path = ext_dir / name
+            if not ext_path.exists():
+                print(f"Downloading {name}...")
+                urllib.request.urlretrieve(url, ext_path)
+                print(f"✓ Downloaded {name}")
+            return True
+        except Exception as e:
+            print(f"Failed to download {name}: {e}")
+            return False
+
     def _load_extensions(self):
         """Load sqlite-graph and sqlite-vector extensions"""
-        # Determine extension paths
-        if sys.platform == "darwin":
-            graph_ext = "extensions/libgraph"
-            vector_ext = "extensions/vector"
-        else:
-            graph_ext = "extensions/libgraph"
-            vector_ext = "extensions/vector"
-
-        # Check if extensions exist
         ext_dir = Path(__file__).parent / "extensions"
+
+        # Determine platform and extension names/URLs
+        if sys.platform == "darwin":
+            import platform
+            arch = platform.machine()
+            graph_name = "libgraph.dylib"
+            vector_name = "vector.dylib"
+            vector_url = "https://github.com/sqliteai/sqlite-vector/releases/latest/download/vector-macos-arm64.dylib" if arch == "arm64" else "https://github.com/sqliteai/sqlite-vector/releases/latest/download/vector-macos-x86_64.dylib"
+            graph_url = "https://github.com/agentflare-ai/sqlite-graph/releases/latest/download/libgraph.dylib"
+        elif sys.platform.startswith("linux"):
+            graph_name = "libgraph.so"
+            vector_name = "vector.so"
+            vector_url = "https://github.com/sqliteai/sqlite-vector/releases/latest/download/vector-linux-x86_64.so"
+            graph_url = "https://github.com/agentflare-ai/sqlite-graph/releases/latest/download/libgraph.so"
+        else:
+            raise RuntimeError(f"Unsupported platform: {sys.platform}. ChimeraDB currently supports macOS and Linux.")
 
         # Try relative path first, then absolute
         possible_paths = [
@@ -91,40 +113,54 @@ class KnowledgeGraph:
 
         for base_path in possible_paths:
             if not graph_loaded:
-                graph_path = base_path / (
-                    "libgraph.dylib" if sys.platform == "darwin" else "libgraph.so"
-                )
+                graph_path = base_path / graph_name
+                # Auto-download if missing and we're in the package directory
+                if not graph_path.exists() and base_path == ext_dir:
+                    self._download_extension(base_path, graph_name, graph_url)
+
                 if graph_path.exists():
                     try:
                         self.conn.load_extension(str(graph_path).replace(".dylib", "").replace(".so", ""))
                         graph_loaded = True
-                    except sqlite3.OperationalError:
-                        pass
+                    except sqlite3.OperationalError as e:
+                        if "not authorized" in str(e).lower():
+                            raise RuntimeError(
+                                "SQLite extensions are disabled. "
+                                "If using Colab/Jupyter, you may need to use a custom SQLite build that allows extensions."
+                            )
 
             if not vector_loaded:
-                vector_path = base_path / (
-                    "vector.dylib" if sys.platform == "darwin" else "vector.so"
-                )
+                vector_path = base_path / vector_name
+                # Auto-download if missing and we're in the package directory
+                if not vector_path.exists() and base_path == ext_dir:
+                    self._download_extension(base_path, vector_name, vector_url)
+
                 if vector_path.exists():
                     try:
                         self.conn.load_extension(str(vector_path).replace(".dylib", "").replace(".so", ""))
                         vector_loaded = True
-                    except sqlite3.OperationalError:
-                        pass
+                    except sqlite3.OperationalError as e:
+                        if "not authorized" in str(e).lower():
+                            raise RuntimeError(
+                                "SQLite extensions are disabled. "
+                                "If using Colab/Jupyter, you may need to use a custom SQLite build that allows extensions."
+                            )
 
             if graph_loaded and vector_loaded:
                 break
 
         if not graph_loaded:
             raise RuntimeError(
-                "Could not load graph extension. "
-                "Please run setup.sh or manually download extensions."
+                f"Could not load graph extension. "
+                f"Tried to find {graph_name} in {ext_dir}. "
+                "Make sure SQLite extension loading is enabled."
             )
 
         if not vector_loaded:
             raise RuntimeError(
-                "Could not load vector extension. "
-                "Please run setup.sh or manually download extensions."
+                f"Could not load vector extension. "
+                f"Tried to find {vector_name} in {ext_dir}. "
+                "Make sure SQLite extension loading is enabled."
             )
 
     def _init_schema(self):

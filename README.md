@@ -77,6 +77,11 @@ stats = kg.query("""
 pip install chimeradb
 ```
 
+**Platform Support:**
+- ✅ macOS (Intel & ARM64)
+- ✅ Linux (x86_64)
+- ⚠️ Windows: Not tested. For Windows users, build extensions manually from [sqlite-graph](https://github.com/agentflare-ai/sqlite-graph) and [sqlite-vector](https://github.com/sqliteai/sqlite-vector) source, or use WSL.
+
 Or from source:
 ```bash
 git clone https://github.com/codimusmaximus/chimeradb.git

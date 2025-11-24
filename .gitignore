@@ -50,3 +50,6 @@ htmlcov/
 
 # Documentation
 docs/_build/
+
+# Personal files
+GITHUB_PROFILE_README.md
