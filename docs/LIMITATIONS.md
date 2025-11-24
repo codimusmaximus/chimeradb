@@ -2,6 +2,26 @@
 
 This document outlines the current limitations of the `sqlite-graph` extension used in this library.
 
+## 🚨 CRITICAL: Do Not Mix Cypher and SQL
+
+**Never use `cypher_execute()` in complex SQL queries.** This includes:
+- ❌ CTEs (WITH clauses): `WITH x AS (SELECT cypher_execute(...)) SELECT * FROM x`
+- ❌ Subqueries: `SELECT * FROM (SELECT cypher_execute(...))`
+- ❌ Complex expressions that call `cypher_execute()` internally
+
+**Why:** Due to a bug in sqlite-graph's global state management, mixing Cypher in complex SQL will **permanently corrupt your database file**. The only recovery is to delete the .db file and recreate it.
+
+**✅ Safe approach:**
+```python
+# Step 1: Run Cypher query
+results = kg.cypher('MATCH (p:Person)-[:WORKS_AT]->(c:Company) RETURN p')
+
+# Step 2: Process results in Python and use SQL separately
+# Extract IDs, then query with SQL
+```
+
+**The Python API (`kg.cypher()`) is safe** - it handles Cypher execution correctly. Only direct SQL calls to `cypher_execute()` in complex contexts are dangerous.
+
 ## ⚠️ Cypher Query Limitations
 
 The following Cypher features are **NOT YET SUPPORTED** in the current version of sqlite-graph:

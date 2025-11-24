@@ -29,8 +29,12 @@ env/
 # Database files
 *.db
 *.db-journal
+*.db.wal
 *.sqlite
 *.sqlite3
+
+# UV lock file
+uv.lock
 
 # Development artifacts
 dev/

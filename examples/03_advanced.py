@@ -16,19 +16,20 @@ You have a database of research papers. When a researcher searches for
 This demonstrates the full power of knowledge graphs:
   • Semantic search (meaning-based retrieval)
   • Graph analysis (connectivity, clustering)
-  • Hybrid queries (Cypher + SQL for complex analytics)
+  • Hybrid queries (graph traversal + SQL for complex analytics)
 
 What Makes This "Advanced"?
 ----------------------------
 1. Subgraph extraction and analysis
 2. Connected component detection (graph algorithms)
-3. Complex Cypher patterns (variable-length paths, pattern matching)
-4. Hybrid analytics (Cypher for structure, SQL for aggregation)
+3. Complex graph patterns (variable-length paths, pattern matching)
+4. Hybrid analytics (graph queries + SQL aggregation)
 5. Real recommendation logic combining multiple signals
 """
 
-import sys
-sys.path.insert(0, '..')
+# Fix for Python 3.13 multiprocessing issues with sentence-transformers
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from chimeradb import KnowledgeGraph
 import json
@@ -43,7 +44,9 @@ print("=" * 80)
 # ============================================================================
 print("\n[1/5] Creating Research Paper Knowledge Graph...")
 
-kg = KnowledgeGraph(db_path="research_papers.db")
+from datetime import datetime as dt
+timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+kg = KnowledgeGraph(db_path=f"research_papers_{timestamp}.db")
 
 print("✓ Knowledge graph initialized with auto-embeddings")
 
@@ -123,7 +126,7 @@ print("\nAdding papers with embeddings...")
 for paper in papers:
     kg.add_entity(
         entity_id=paper["id"],
-        labels=["Paper"],  # Add label for Cypher queries
+        labels=["Paper"],  # Add label for filtering/querying
         properties=paper,
         embed_field="text"
     )
@@ -193,10 +196,25 @@ print("-" * 80)
 
 print(f"\nAnalyzing subgraph of top {len(top_paper_ids)} papers...")
 
-# Get subgraph
-subgraph = kg.get_subgraph(top_paper_ids)
-nodes = {n['id']: n for n in subgraph['nodes']}
-edges = subgraph['edges']
+# Get nodes in subgraph
+placeholders = ','.join(['?'] * len(top_paper_ids))
+nodes_query = f"""
+    SELECT id, properties
+    FROM nodes
+    WHERE id IN ({placeholders})
+"""
+nodes_result = kg.conn.execute(nodes_query, top_paper_ids).fetchall()
+nodes = {row[0]: json.loads(row[1]) for row in nodes_result}
+
+# Get edges in subgraph
+edges_query = f"""
+    SELECT from_id, to_id, edge_type
+    FROM edges
+    WHERE from_id IN ({placeholders})
+      AND to_id IN ({placeholders})
+"""
+edges_result = kg.conn.execute(edges_query, top_paper_ids + top_paper_ids).fetchall()
+edges = [{'source': row[0], 'target': row[1], 'type': row[2]} for row in edges_result]
 
 print(f"  Nodes: {len(nodes)}")
 print(f"  Edges: {len(edges)}")
@@ -209,12 +227,10 @@ graph = defaultdict(set)
 for edge in edges:
     src = edge['source']
     tgt = edge['target']
-    # Convert IDs back to paper IDs
-    src_id = next((pid for pid, node in nodes.items() if node['id'] == src), None)
-    tgt_id = next((pid for pid, node in nodes.items() if node['id'] == tgt), None)
-    if src_id and tgt_id:
-        graph[src_id].add(tgt_id)
-        graph[tgt_id].add(src_id)  # Undirected
+    # Use node IDs directly
+    if src in nodes and tgt in nodes:
+        graph[src].add(tgt)
+        graph[tgt].add(src)  # Undirected
 
 # BFS to find components
 visited = set()
@@ -250,10 +266,10 @@ else:
 
     for i, component in enumerate(sorted(components, key=len, reverse=True), 1):
         print(f"\n  Cluster {i} ({len(component)} papers):")
-        for paper_id in component:
-            paper = next(p for p in papers if p["id"] == paper_id)
-            print(f"    • {paper['title'][:50]}")
-            print(f"      {paper['field']} | {paper['citations']:,} citations")
+        for node_id in component:
+            props = nodes[node_id]
+            print(f"    • {props['title'][:50]}")
+            print(f"      {props['field']} | {props['citations']:,} citations")
 
         if len(component) == 1:
             print(f"    → ISOLATED: No citations to/from other top papers")
@@ -263,24 +279,21 @@ else:
 # ============================================================================
 print("\n[5/5] Advanced Hybrid Queries")
 print("\n" + "-" * 80)
-print("Combining Cypher pattern matching with SQL analytics")
+print("Combining graph analysis with SQL analytics")
 print("-" * 80)
 
 print("\n--- Query 1: Find 'Bridge Papers' (SQL analysis) ---")
 print("Papers that connect different research areas")
-print("\nNote: sqlite-graph doesn't support bidirectional Cypher patterns like:")
-print("      MATCH (p1)-[:CITES]->(bridge)<-[:CITES]-(p2)")
-print("      Using SQL instead for this type of query.")
 
 # Use SQL to analyze which are bridge papers (connect different fields)
 sql_query = """
     SELECT DISTINCT
-        json_extract(bridge.properties, '$.title') as title,
-        json_extract(bridge.properties, '$.field') as field,
-        COUNT(DISTINCT json_extract(citing.properties, '$.field')) as field_count
-    FROM graph_edges e1
-    JOIN graph_nodes citing ON e1.source = citing.id
-    JOIN graph_nodes bridge ON e1.target = bridge.id
+        json_extract_string(ANY_VALUE(bridge.properties), 'title') as title,
+        json_extract_string(ANY_VALUE(bridge.properties), 'field') as field,
+        COUNT(DISTINCT json_extract_string(citing.properties, 'field')) as field_count
+    FROM edges e1
+    JOIN nodes citing ON e1.from_id = citing.id
+    JOIN nodes bridge ON e1.to_id = bridge.id
     WHERE e1.edge_type = 'CITES'
     GROUP BY bridge.id
     HAVING field_count > 1
@@ -298,14 +311,15 @@ print("\n--- Query 2: Citation Count Analysis (SQL) ---")
 print("Most influential papers in our subgraph")
 
 # SQL aggregation
-sql_query = """
+placeholders = ','.join(['?'] * len(top_paper_ids))
+sql_query = f"""
     SELECT
-        json_extract(n.properties, '$.title') as title,
-        json_extract(n.properties, '$.field') as field,
-        COUNT(e.source) as incoming_citations
-    FROM graph_nodes n
-    LEFT JOIN graph_edges e ON e.target = n.id AND e.edge_type = 'CITES'
-    WHERE json_extract(n.properties, '$.id') IN (?, ?, ?, ?, ?)
+        json_extract_string(ANY_VALUE(n.properties), 'title') as title,
+        json_extract_string(ANY_VALUE(n.properties), 'field') as field,
+        COUNT(e.from_id) as incoming_citations
+    FROM nodes n
+    LEFT JOIN edges e ON e.to_id = n.id AND e.edge_type = 'CITES'
+    WHERE n.id IN ({placeholders})
     GROUP BY n.id
     ORDER BY incoming_citations DESC
 """
@@ -318,19 +332,14 @@ for title, field, count in results:
 
 print("\n--- Query 3: Find Direct Citations (SQL) ---")
 print("What papers does Vision Transformer cite?")
-print("\nNote: Using SQL for this query since sqlite-graph has limitations with")
-print("      returning multiple nodes and complex patterns.")
 
 # Use SQL to find what paper5 cites
 sql_query = """
-    SELECT json_extract(n.properties, '$.title') as title
-    FROM graph_edges e
-    JOIN graph_nodes n ON e.target = n.id
-    WHERE e.source IN (
-        SELECT id FROM graph_nodes
-        WHERE json_extract(properties, '$.id') = 'paper5'
-    )
-    AND e.edge_type = 'CITES'
+    SELECT json_extract_string(n.properties, 'title') as title
+    FROM edges e
+    JOIN nodes n ON e.to_id = n.id
+    WHERE e.from_id = 'paper5'
+      AND e.edge_type = 'CITES'
 """
 citations = kg.conn.execute(sql_query).fetchall()
 
@@ -359,10 +368,9 @@ print("   • Detected connected components (clusters vs islands)")
 print("   • Identified isolated research areas")
 
 print("\n3. Hybrid Queries")
-print("   • Cypher: Simple directional patterns (A->B relationships)")
+print("   • Graph queries: Directional patterns and traversals")
 print("   • SQL: Complex patterns, aggregations, multi-way joins")
-print("   • sqlite-graph limitation: no bidirectional Cypher patterns")
-print("   • Solution: Use SQL for complex graph queries")
+print("   • Combine both for maximum flexibility")
 
 print("\n4. Real-World Applications")
 print("   • Research paper recommendations")

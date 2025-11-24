@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 """
-Getting Started with SQLite Knowledge Graph
-============================================
+Getting Started with ChimeraDB
+===============================
 
 This tutorial shows you:
-  1. Building a graph with Cypher (clean, declarative)
-  2. Bulk loading with SQL (fast, efficient)
-  3. Why Cypher shines for traversals (vs messy SQL)
-  4. Semantic search with embeddings (the killer feature!)
+  1. Creating a knowledge graph with the Python API
+  2. Semantic search with embeddings
+  3. Graph traversal with SQL/PGQ
+  4. Combining vector search + graph queries + SQL analytics
 """
+
+# Fix for Python 3.13 multiprocessing issues with sentence-transformers
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from chimeradb import KnowledgeGraph
 from datetime import datetime
-import json
 
 print("=" * 80)
-print("Getting Started: Knowledge Graphs with Semantic Search")
+print("Getting Started: ChimeraDB - Semantic Search + Graph Queries + SQL Analytics")
 print("=" * 80)
 
 # ============================================================================
@@ -24,29 +27,28 @@ print("=" * 80)
 print("""
 We're building TechCorp's organization with project assignments:
 
-  Alice (CEO) ─── "Leads AI strategy"
+  Alice (CEO) ─── "Leading AI strategy"
     |
     ├─ manages ─> Bob (CTO) ─── "Building ML platform"
     |                 |
     |                 └─ works_on ─> AI Platform Project
     |
-    └─ manages ─> Carol (CFO) ─── "Manages company finances"
+    └─ manages ─> Carol (CFO) ─── "Managing finances"
                       |
                       └─ works_on ─> Funding Round Project
 
-  + More team members and projects...
-
-We'll see:
-  ✓ How to mix Cypher and SQL
-  ✓ Why Cypher is better for traversals
-  ✓ How semantic search finds "who works on machine learning?"
+We'll demonstrate:
+  ✓ Python API for building graphs
+  ✓ Semantic search with embeddings
+  ✓ Graph pattern matching with SQL/PGQ
+  ✓ SQL analytics on graph data
 """)
 
 # ============================================================================
 # Step 1: Create Database with Embeddings
 # ============================================================================
 print("\n" + "=" * 80)
-print("Step 1: Create Database (with embedding support)")
+print("Step 1: Create Database (with auto-embeddings)")
 print("=" * 80)
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -56,44 +58,33 @@ print("✓ Database created")
 print("✓ Embeddings auto-enabled (using all-MiniLM-L6-v2 by default)")
 
 # ============================================================================
-# Step 2: Create Core Leadership with Cypher
+# Step 2: Add Entities with Python API
 # ============================================================================
 print("\n" + "=" * 80)
-print("Step 2: Create Leadership Team with Cypher")
+print("Step 2: Add Entities with Python API")
 print("=" * 80)
 
-print("\nWhy Cypher? Clean syntax for creating nodes + relationships together:\n")
+# Create leadership team
+kg.add_entity(
+    "alice",
+    {"name": "Alice Chen", "title": "CEO", "bio": "Leading TechCorp AI strategy and vision"},
+    labels=["Person"],
+    embed_field="bio"
+)
 
-cypher_commands = [
-    # Create Alice
-    """CREATE (alice:Person {
-        name: 'Alice Chen',
-        title: 'CEO',
-        bio: 'Leading TechCorp AI strategy and vision',
-        department: 'Executive'
-    })""",
+kg.add_entity(
+    "bob",
+    {"name": "Bob Smith", "title": "CTO", "bio": "Building scalable ML infrastructure and platform"},
+    labels=["Person"],
+    embed_field="bio"
+)
 
-    # Create Bob
-    """CREATE (bob:Person {
-        name: 'Bob Smith',
-        title: 'CTO',
-        bio: 'Building scalable ML infrastructure and platform',
-        department: 'Engineering'
-    })""",
-
-    # Create Carol
-    """CREATE (carol:Person {
-        name: 'Carol Johnson',
-        title: 'CFO',
-        bio: 'Managing company finances and investor relations',
-        department: 'Finance'
-    })""",
-]
-
-for cmd in cypher_commands:
-    kg.cypher(cmd, auto_commit=False)
-
-kg.commit()
+kg.add_entity(
+    "carol",
+    {"name": "Carol Johnson", "title": "CFO", "bio": "Managing company finances and investor relations"},
+    labels=["Person"],
+    embed_field="bio"
+)
 
 print("✓ Created: Alice Chen (CEO)")
 print("✓ Created: Bob Smith (CTO)")
@@ -101,181 +92,77 @@ print("✓ Created: Carol Johnson (CFO)")
 print("  (Embeddings auto-generated from 'bio' field)")
 
 # Create management relationships
-kg.add_relationship("1", "2", "MANAGES", {"since": "2020"})
-kg.add_relationship("1", "3", "MANAGES", {"since": "2021"})
+kg.add_relationship("alice", "bob", "MANAGES", {"since": 2020})
+kg.add_relationship("alice", "carol", "MANAGES", {"since": 2021})
 print("\n✓ Alice manages Bob and Carol")
 
 # ============================================================================
-# Step 3: Bulk Load Engineering Team with SQL
+# Step 3: Add Engineering Team and Projects
 # ============================================================================
 print("\n" + "=" * 80)
-print("Step 3: Bulk Load Engineering Team with SQL")
+print("Step 3: Add Engineering Team and Projects")
 print("=" * 80)
 
-print("\nWhy SQL? Efficient for bulk inserts from data files:\n")
+# Add team members
+kg.add_entity(
+    "diana",
+    {"name": "Diana Lee", "title": "Senior ML Engineer",
+     "bio": "Developing deep learning models for recommendation systems"},
+    labels=["Person"],
+    embed_field="bio"
+)
 
-# Simulate loading from a CSV or database
-team_members = [
-    {
-        "labels": ["Person"],
-        "props": {
-            "name": "Diana Lee",
-            "title": "Senior ML Engineer",
-            "bio": "Developing deep learning models for recommendation systems",
-            "department": "Engineering"
-        }
-    },
-    {
-        "labels": ["Person"],
-        "props": {
-            "name": "Eve Martinez",
-            "title": "Data Scientist",
-            "bio": "Analyzing user behavior and training neural networks",
-            "department": "Engineering"
-        }
-    },
-    {
-        "labels": ["Project"],
-        "props": {
-            "name": "AI Platform",
-            "description": "Building machine learning infrastructure for real-time predictions",
-            "status": "active"
-        }
-    },
-    {
-        "labels": ["Project"],
-        "props": {
-            "name": "Funding Round",
-            "description": "Series B fundraising and financial planning",
-            "status": "active"
-        }
-    },
-]
+kg.add_entity(
+    "eve",
+    {"name": "Eve Martinez", "title": "Data Scientist",
+     "bio": "Analyzing user behavior and training neural networks"},
+    labels=["Person"],
+    embed_field="bio"
+)
 
-print("Inserting 4 entities with SQL INSERT:")
-for item in team_members:
-    kg.execute(
-        "INSERT INTO graph_nodes (labels, properties) VALUES (?, ?)",
-        (json.dumps(item["labels"]), json.dumps(item["props"]))
-    )
-    entity_type = item["labels"][0]
-    name = item["props"].get("name", "Unknown")
-    print(f"  ✓ {name} ({entity_type})")
+# Add projects
+kg.add_entity(
+    "ai_platform",
+    {"name": "AI Platform",
+     "description": "Building machine learning infrastructure for real-time predictions",
+     "status": "active"},
+    labels=["Project"],
+    embed_field="description"
+)
 
-kg.commit()
-print("  (Embeddings auto-generated for all entities)")
+kg.add_entity(
+    "funding",
+    {"name": "Funding Round",
+     "description": "Series B fundraising and financial planning",
+     "status": "active"},
+    labels=["Project"],
+    embed_field="description"
+)
 
-# Add relationships (Bob manages Diana and Eve, they work on projects)
-relationships = [
-    (2, 4, "MANAGES", {}),  # Bob -> Diana
-    (2, 5, "MANAGES", {}),  # Bob -> Eve
-    (4, 6, "WORKS_ON", {"role": "Lead"}),  # Diana -> AI Platform
-    (5, 6, "WORKS_ON", {"role": "Contributor"}),  # Eve -> AI Platform
-    (3, 7, "WORKS_ON", {"role": "Lead"}),  # Carol -> Funding Round
-]
+print("✓ Diana Lee (Senior ML Engineer)")
+print("✓ Eve Martinez (Data Scientist)")
+print("✓ AI Platform (Project)")
+print("✓ Funding Round (Project)")
 
-for src, tgt, rel_type, props in relationships:
-    kg.conn.execute(
-        "INSERT INTO graph_edges (source, target, edge_type, properties) VALUES (?, ?, ?, ?)",
-        (src, tgt, rel_type, json.dumps(props))
-    )
+# Add relationships
+kg.add_relationship("bob", "diana", "MANAGES")
+kg.add_relationship("bob", "eve", "MANAGES")
+kg.add_relationship("diana", "ai_platform", "WORKS_ON", {"role": "Lead"})
+kg.add_relationship("eve", "ai_platform", "WORKS_ON", {"role": "Contributor"})
+kg.add_relationship("carol", "funding", "WORKS_ON", {"role": "Lead"})
 
-kg.conn.commit()
 print("\n✓ Created reporting structure and project assignments")
 
 # ============================================================================
-# Step 4: Query Comparison - Cypher vs SQL
+# Step 4: Semantic Search with Embeddings
 # ============================================================================
 print("\n" + "=" * 80)
-print("Step 4: The Power of Cypher - Traversal Queries")
-print("=" * 80)
-
-print("\nQuestion: 'Who reports to Alice (directly or indirectly)?'\n")
-
-print("=" * 40)
-print("Cypher (Clean & Readable):")
-print("=" * 40)
-print("""
-MATCH (alice:Person {name: 'Alice Chen'})
-      -[:MANAGES*1..2]->(report:Person)
-RETURN report
-""")
-
-print("\nThis finds everyone 1-2 hops away through MANAGES relationships.")
-print("Simple, declarative, and easy to understand!")
-
-print("\n" + "=" * 40)
-print("SQL (Messy & Complex):")
-print("=" * 40)
-print("""
-WITH RECURSIVE reporting_chain AS (
-  -- Anchor: Direct reports
-  SELECT n2.id, n2.properties, 1 as level
-  FROM graph_edges e
-  JOIN graph_nodes n1 ON e.source = n1.id
-  JOIN graph_nodes n2 ON e.target = n2.id
-  WHERE json_extract(n1.properties, '$.name') = 'Alice Chen'
-    AND e.edge_type = 'MANAGES'
-
-  UNION ALL
-
-  -- Recursive: Reports of reports
-  SELECT n2.id, n2.properties, rc.level + 1
-  FROM reporting_chain rc
-  JOIN graph_edges e ON e.source = rc.id
-  JOIN graph_nodes n2 ON e.target = n2.id
-  WHERE e.edge_type = 'MANAGES'
-    AND rc.level < 2
-)
-SELECT DISTINCT json_extract(properties, '$.name')
-FROM reporting_chain;
-""")
-
-print("\nSame query, but verbose and error-prone!")
-print("This is why graph databases exist! 🎯")
-
-# Let's actually run the SQL version to show it works
-print("\n" + "-" * 80)
-print("Running the complex SQL query:")
-print("-" * 80)
-
-results = kg.query("""
-WITH RECURSIVE reporting_chain AS (
-  SELECT n2.id, n2.properties, 1 as level
-  FROM graph_edges e
-  JOIN graph_nodes n1 ON e.source = n1.id
-  JOIN graph_nodes n2 ON e.target = n2.id
-  WHERE json_extract(n1.properties, '$.name') = 'Alice Chen'
-    AND e.edge_type = 'MANAGES'
-
-  UNION ALL
-
-  SELECT n2.id, n2.properties, rc.level + 1
-  FROM reporting_chain rc
-  JOIN graph_edges e ON e.source = rc.id
-  JOIN graph_nodes n2 ON e.target = n2.id
-  WHERE e.edge_type = 'MANAGES'
-    AND rc.level < 2
-)
-SELECT DISTINCT json_extract(properties, '$.name'), json_extract(properties, '$.title')
-FROM reporting_chain
-ORDER BY json_extract(properties, '$.name')
-""")
-
-print("\nAlice's organization (direct + indirect reports):")
-for name, title in results:
-    print(f"  • {name} - {title}")
-
-# ============================================================================
-# Step 5: Semantic Search with Embeddings
-# ============================================================================
-print("\n" + "=" * 80)
-print("Step 5: The Killer Feature - Semantic Search")
+print("Step 4: The Killer Feature - Semantic Search")
 print("=" * 80)
 
 print("""
 Traditional databases: Exact keyword matching only
-Knowledge graphs + embeddings: Understand meaning and context!
+ChimeraDB: Understands meaning and context!
 """)
 
 print("\n" + "-" * 80)
@@ -325,43 +212,147 @@ for i, result in enumerate(results, 1):
 print("\n✨ Found Carol and the Funding project without exact keyword matches!")
 
 # ============================================================================
+# Step 5: Graph Traversal
+# ============================================================================
+print("\n" + "=" * 80)
+print("Step 5: Graph Traversal - Find Alice's Organization")
+print("=" * 80)
+
+print("\nQuestion: 'Who reports to Alice (directly or indirectly)?'\n")
+
+# Use the traverse method for simple graph traversal
+results = kg.traverse("alice", direction="outgoing", max_depth=2, relation_type="MANAGES")
+
+print("Alice's organization (via traverse API):")
+for person in results:
+    props = person['properties']
+    depth = person['depth']
+    indent = "  " * depth
+    print(f"{indent}• {props.get('name')} - {props.get('title')} (depth: {depth})")
+
+# ============================================================================
+# Step 6: Graph Pattern Matching with SQL
+# ============================================================================
+print("\n" + "=" * 80)
+print("Step 6: Graph Pattern Matching with SQL")
+print("=" * 80)
+
+print("\nFind people who work on projects:\n")
+
+# Use SQL joins to find relationships
+# (SQL/PGQ would make this simpler, but requires duckpgq extension)
+results = kg.query("""
+    SELECT
+        json_extract(p.properties, '$.name') as person_name,
+        json_extract(p.properties, '$.title') as title,
+        json_extract(proj.properties, '$.name') as project_name,
+        json_extract(e.properties, '$.role') as role
+    FROM edges e
+    JOIN nodes p ON e.from_id = p.id
+    JOIN nodes proj ON e.to_id = proj.id
+    WHERE e.edge_type = 'WORKS_ON'
+      AND proj.labels LIKE '%Project%'
+    ORDER BY project_name, person_name
+""")
+
+print("Who works on what:")
+for person, title, project, role in results:
+    role_str = f" ({role})" if role else ""
+    print(f"  • {person} ({title}) → {project}{role_str}")
+
+# ============================================================================
+# Step 7: SQL Analytics on Graph Data
+# ============================================================================
+print("\n" + "=" * 80)
+print("Step 7: SQL Analytics - Count People by Department")
+print("=" * 80)
+
+results = kg.query("""
+    SELECT
+        json_extract(properties, '$.title') as title,
+        json_extract(properties, '$.name') as name,
+        json_extract(properties, '$.bio') as bio
+    FROM nodes
+    WHERE labels LIKE '%Person%'
+    ORDER BY title
+""")
+
+print("\nAll team members:")
+for title, name, bio in results:
+    print(f"\n  {name} - {title}")
+    print(f"  {bio}")
+
+# ============================================================================
+# Step 8: Hybrid Query - Combine Semantic Search + Graph Traversal
+# ============================================================================
+print("\n" + "=" * 80)
+print("Step 8: Hybrid Query - Semantic Search + Graph Context")
+print("=" * 80)
+
+print("\nFind ML experts and show who they work for:\n")
+
+# First, semantic search for ML experts (filter to only People)
+ml_experts = kg.search("machine learning and deep learning expert", top_k=5, labels=["Person"])
+
+print("ML Experts found via semantic search:")
+for expert in ml_experts[:2]:  # Top 2 people
+    person_id = expert['id']
+    name = expert['properties'].get('name', 'Unknown')
+    title = expert['properties'].get('title', 'N/A')
+
+    # Now find their manager using graph traversal
+    manager_results = kg.traverse(person_id, direction="incoming", relation_type="MANAGES", max_depth=1)
+
+    manager = "No manager"
+    if manager_results:
+        manager = manager_results[0]['properties'].get('name', 'Unknown')
+
+    print(f"  • {name} ({title}) - Reports to: {manager}")
+
+print("\n✨ Combined semantic search with graph relationships!")
+
+# ============================================================================
 # Summary
 # ============================================================================
 print("\n" + "=" * 80)
-print("Summary: Why This Stack is Powerful")
+print("Summary: Why ChimeraDB is Powerful")
 print("=" * 80)
 
 print("""
-1. Cypher for Graph Operations:
-   ✓ Clean syntax for creating connected data
-   ✓ Pattern matching (MATCH) beats complex SQL
-   ✓ Traversals are simple: -[:MANAGES*1..2]->
+1. Semantic Search (Vector Embeddings):
+   ✓ Find results by meaning, not just keywords
+   ✓ Auto-generated embeddings on every insert
+   ✓ HNSW indexing for fast similarity search
 
-2. SQL for Bulk Operations:
-   ✓ Efficient bulk inserts from files
-   ✓ Analytics and aggregations when needed
-   ✓ Fallback for complex custom queries
+2. Graph Traversal (Python API):
+   ✓ Simple traverse() method for common patterns
+   ✓ Direction: outgoing, incoming, or both
+   ✓ Filter by relationship type
 
-3. Embeddings for Intelligence (Auto-Enabled!):
-   ✓ Semantic search: meaning, not just keywords
-   ✓ Automatic on every insert - no configuration needed
-   ✓ Context-aware: understands synonyms and concepts
-   ✓ Just use: kg = KnowledgeGraph("my.db")
+3. Graph Queries (SQL):
+   ✓ Use SQL joins to traverse relationships
+   ✓ JSON extraction from node/edge properties
+   ✓ WHERE clauses for filtering
 
-4. Mix and Match:
-   ✓ Use the right tool for each job
-   ✓ Cypher + SQL + Embeddings = Complete solution
-   ✓ All in SQLite = Simple deployment, no infrastructure
+4. SQL Analytics (DuckDB):
+   ✓ Full SQL power for aggregations
+   ✓ JSON functions for property access
+   ✓ 10-100x faster than embedded alternatives
+
+5. All in One:
+   ✓ Single DuckDB file - no infrastructure
+   ✓ Combine vector search + graphs + SQL in one query
+   ✓ Perfect for RAG systems, AI agents, recommendations
 """)
 
 print("\n" + "=" * 80)
-print("✅ You now understand the full power of this stack!")
+print("✅ You now understand the full power of ChimeraDB!")
 print("=" * 80)
 
 print(f"\nYour database: {kg.db_path}")
 print("\nNext steps:")
 print("  • Try different semantic queries")
-print("  • Explore: examples/02_basic.py (more Cypher patterns)")
-print("  • Advanced: examples/03_advanced.py (graph algorithms)")
+print("  • Explore: examples/02_basic.py (more patterns)")
+print("  • Advanced: examples/03_advanced.py (complex queries)")
 
 kg.close()

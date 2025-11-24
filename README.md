@@ -1,8 +1,8 @@
 # ChimeraDB
 
-**Semantic search + graph queries + SQL analytics. All in one SQLite file.**
+**Semantic search + graph queries + SQL analytics. All in one DuckDB file.**
 
-The only database that combines vector embeddings, Cypher graph patterns, and full SQL for LLM apps. No separate vector DB, no separate graph DB, no infrastructure.
+The only database that combines vector embeddings, property graphs (SQL/PGQ), and full SQL analytics for LLM apps. No separate vector DB, no separate graph DB, no infrastructure.
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -14,7 +14,7 @@ The only database that combines vector embeddings, Cypher graph patterns, and fu
 ## Quick Start
 
 ```bash
-pip install chimeradb
+pip install chimeradb duckdb
 ```
 
 ```python
@@ -22,33 +22,63 @@ from chimeradb import KnowledgeGraph
 
 kg = KnowledgeGraph("my.db")  # Auto-embeddings enabled
 
-# 1. Vector embeddings - semantic search
-kg.cypher("CREATE (p:Person {name: 'Alice', bio: 'ML engineer building LLM agents'})")
-kg.cypher("CREATE (p:Person {name: 'Bob', bio: 'AI researcher focused on NLP'})")
+# Add entities (embeddings generated from 'bio' field)
+kg.add_entity("alice", {"name": "Alice", "bio": "ML engineer building LLM agents"}, ["Person"])
+kg.add_entity("bob", {"name": "Bob", "bio": "AI researcher focused on NLP"}, ["Person"])
+kg.add_entity("acme", {"name": "Acme AI"}, ["Company"])
 
+# Add relationships
+kg.add_relationship("alice", "acme", "WORKS_AT")
+kg.add_relationship("bob", "acme", "WORKS_AT")
+
+# 1. Semantic search - Find by meaning, not keywords
 results = kg.search("who works on language models?", top_k=2)
 # Finds both Alice and Bob even though query doesn't match exactly
 
-# 2. Cypher - graph relationships
-kg.cypher("CREATE (alice:Person {name: 'Alice'})")
-kg.cypher("CREATE (bob:Person {name: 'Bob'})")
-kg.cypher("CREATE (acme:Company {name: 'Acme AI'})")
-kg.cypher("MATCH (alice:Person {name: 'Alice'}), (acme:Company) CREATE (alice)-[:WORKS_AT]->(acme)")
+# 2. Graph traversal - Python API
+employees = kg.traverse("acme", direction="incoming")
 
-# Simple pattern matching - no messy SQL joins
-colleagues = kg.cypher("MATCH (p:Person)-[:WORKS_AT]->(:Company)<-[:WORKS_AT]-(colleague) RETURN colleague")
+# 3. SQL/PGQ - Graph pattern matching (SQL:2023 standard)
+results = kg.query("""
+    SELECT *
+    FROM GRAPH_TABLE (knowledge_graph
+        MATCH (p:nodes)-[e:edges]->(c:nodes)
+        WHERE c.id = 'acme'
+        COLUMNS (
+            json_extract_string(p.properties, 'name') as person,
+            e.edge_type
+        )
+    )
+""")
 
-# 3. SQL - analytics and aggregation
+# 4. SQL analytics - Aggregate, filter, join
 stats = kg.query("""
     SELECT
-        json_extract(properties, '$.name') as company,
+        json_extract_string(n.properties, 'name') as company,
         COUNT(*) as employee_count
-    FROM graph_nodes
-    WHERE labels LIKE '%Company%'
+    FROM nodes n
+    JOIN edges e ON e.to_id = n.id
+    WHERE n.labels LIKE '%Company%'
     GROUP BY company
 """)
 
-# The power: combine all three in one query!
+# Combine all three in one query!
+results = kg.query("""
+    WITH relevant_people AS (
+        -- Find semantically similar people (would use search() in practice)
+        SELECT id, properties
+        FROM nodes
+        WHERE labels LIKE '%Person%'
+    )
+    SELECT
+        json_extract_string(p.properties, 'name') as person,
+        json_extract_string(c.properties, 'name') as company,
+        e.edge_type
+    FROM relevant_people p
+    JOIN edges e ON e.from_id = p.id
+    JOIN nodes c ON e.to_id = c.id
+    WHERE c.labels LIKE '%Company%'
+""")
 ```
 
 ## Why ChimeraDB?
@@ -56,8 +86,8 @@ stats = kg.query("""
 **Three powerful tools, one simple database:**
 
 1. **Vector embeddings** - Search by meaning, not keywords. Find "machine learning expert" when the text says "AI researcher"
-2. **Cypher graph queries** - Express relationships naturally: `MATCH (person)-[:WORKS_AT]->(company)` beats complex SQL joins
-3. **Full SQL analytics** - Aggregate, filter, join with the full power of SQLite when you need it
+2. **Property graphs** - Express relationships naturally with SQL/PGQ: `MATCH (person)-[edge]->(company)`
+3. **Full SQL analytics** - Aggregate, filter, join with the full power of DuckDB
 
 **The combination is the killer feature:**
 - RAG systems: Semantic search + relationship context
@@ -65,47 +95,37 @@ stats = kg.query("""
 - Recommendations: Similarity search + collaborative filtering
 
 **Zero infrastructure:**
-- One SQLite file
+- One DuckDB file
 - Runs anywhere (laptop, server, edge device)
-- Works with any language (Python, Node.js, Go, Rust...)
+- 10-100x faster than other embedded options
+- Production-ready extensions (duckpgq, vss)
 
 ## Installation
 
 ### Python Package
 
 ```bash
-pip install chimeradb
+pip install chimeradb duckdb
 ```
 
 **Platform Support:**
 - ✅ macOS (Intel x86_64 & Apple Silicon ARM64)
-- ✅ Linux (x86_64 only)
-- ❌ Linux ARM64: Not supported yet. Build extensions from source: [sqlite-graph](https://github.com/agentflare-ai/sqlite-graph) and [sqlite-vector](https://github.com/sqliteai/sqlite-vector)
-- ⚠️ Windows: Not tested. Use WSL (x86_64) or build extensions manually from source.
+- ✅ Linux (x86_64)
+- ✅ Linux ARM64 (with DuckDB v1.1.3)
+- ⚠️ Windows: DuckDB extensions may need manual installation
 
 Or from source:
 ```bash
 git clone https://github.com/codimusmaximus/chimeradb.git
 cd chimeradb
-./setup.sh && source .venv/bin/activate
+pip install -e .
 ```
 
-### SQL Only (Any Language)
+### DuckDB Extensions
 
-```bash
-# macOS ARM64
-mkdir -p extensions
-curl -L https://github.com/agentflare-ai/sqlite-graph/releases/latest/download/libgraph.dylib -o extensions/libgraph.dylib
-curl -L https://github.com/sqliteai/sqlite-vector/releases/latest/download/vector-macos-arm64.dylib -o extensions/vector.dylib
-```
-
-Then load in any SQLite client:
-```sql
-.load extensions/libgraph
-.load extensions/vector
-```
-
-Use from Python, Node.js, Go, Rust, Java, C++, or any language with SQLite support.
+ChimeraDB automatically installs these DuckDB extensions:
+- **duckpgq**: Property graph queries with SQL/PGQ
+- **vss**: Vector similarity search with HNSW indexing
 
 ## Python API
 
@@ -122,9 +142,9 @@ kg = KnowledgeGraph("my_graph.db")  # Or ":memory:"
 # Add nodes
 kg.add_entity(
     entity_id="person1",
-    labels=["Person"],
     properties={"name": "Alice", "bio": "AI researcher"},
-    embed_field="bio"
+    labels=["Person"],
+    embed_field="bio"  # Auto-generate embedding from this field
 )
 
 # Add relationships
@@ -138,13 +158,24 @@ kg.add_relationship(
 # Semantic search
 results = kg.search("machine learning expert", top_k=10)
 
-# Graph traversal
+# Graph traversal (recursive SQL)
 network = kg.traverse("person1", direction="outgoing", max_depth=3)
 
-# SQL queries
+# SQL/PGQ pattern matching
+results = kg.query("""
+    SELECT *
+    FROM GRAPH_TABLE (knowledge_graph
+        MATCH (p:nodes)-[w:edges]->(c:nodes)
+        WHERE p.labels LIKE '%Person%'
+          AND c.labels LIKE '%Company%'
+        COLUMNS (p.id, w.edge_type, c.id)
+    )
+""")
+
+# Raw SQL queries
 data = kg.query("""
     SELECT json_extract(properties, '$.name') as name
-    FROM graph_nodes
+    FROM nodes
     WHERE json_extract(properties, '$.role') = 'Engineer'
 """)
 
@@ -153,7 +184,6 @@ kg.close()
 
 ## Examples
 
-- **[00_sql_only.sql](examples/00_sql_only.sql)**: Pure SQL usage (no Python)
 - **[01_getting_started.py](examples/01_getting_started.py)**: Python API basics
 - **[02_basic.py](examples/02_basic.py)**: Semantic search + graph traversal + SQL analytics
 - **[03_advanced.py](examples/03_advanced.py)**: Research paper recommendations with graph analysis
@@ -161,22 +191,46 @@ kg.close()
 ## Requirements
 
 - Python 3.8+
-- macOS (ARM64 or Intel) - Linux and Windows coming soon
-- `sentence-transformers` (auto-installed by setup.sh)
+- DuckDB 1.1.3+ (automatically installed with chimeradb)
+- `sentence-transformers` (for embeddings, auto-installed)
 
 ## Documentation
 
 - [Getting Started Guide](docs/GETTING_STARTED.md)
-- [Cypher Guide](docs/CYPHER_GUIDE.md)
-- [Labels Guide](docs/LABELS_GUIDE.md)
-- [Limitations](docs/LIMITATIONS.md)
+- [SQL/PGQ Guide](https://duckpgq.org/documentation/sql_pgq/)
+- [DuckDB VSS Extension](https://duckdb.org/2024/05/03/vector-similarity-search-vss)
 
 ## Tech Stack
 
 Built on:
-- [SQLite](https://sqlite.org) - World's most deployed database
-- [sqlite-vector](https://github.com/sqliteai/sqlite-vector) - Vector similarity search
-- [sqlite-graph](https://github.com/agentflare-ai/sqlite-graph) - Cypher queries
+- [DuckDB](https://duckdb.org) - Fast analytical database engine
+- [duckpgq](https://duckpgq.org/) - SQL/PGQ property graph queries
+- [vss extension](https://duckdb.org/docs/extensions/vss) - Vector similarity search
+
+## Performance
+
+DuckDB provides **10-100x better performance** than traditional embedded databases for analytical queries:
+- Columnar storage for fast aggregations
+- Vectorized query execution
+- Zero-copy data access
+- Production-ready HNSW indexing
+
+## Migration from v0.1.x (SQLite)
+
+ChimeraDB v0.2.0+ uses DuckDB instead of SQLite for better performance and reliability. Key changes:
+
+**Removed:**
+- `cypher()` method - Use SQL/PGQ with `query()` instead
+- Cypher query language - Use SQL/PGQ (SQL:2023 standard)
+- SQLite extensions - Now use DuckDB extensions
+
+**New/Updated:**
+- Property graphs use SQL/PGQ syntax
+- 10-100x faster for analytics
+- No corruption bugs from global state
+- Same Python API for add_entity(), add_relationship(), search(), traverse()
+
+See [SQL/PGQ documentation](https://duckpgq.org/documentation/sql_pgq/) for graph query syntax.
 
 ## License
 

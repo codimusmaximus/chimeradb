@@ -5,16 +5,16 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="chimeradb",
-    version="0.1.2",
+    version="0.2.0",
     author="Alexander Leirvåg",
     author_email="alexander@prismeta.com",
-    description="Knowledge graph + vector search + SQL analytics in SQLite",
+    description="Knowledge graph + vector search + SQL analytics powered by DuckDB",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/codimusmaximus/chimeradb",
     packages=find_packages(),
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
         "Topic :: Database",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -24,9 +24,11 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
     ],
     python_requires=">=3.8",
     install_requires=[
+        "duckdb>=1.1.3",
         "numpy>=1.20.0",
         "sentence-transformers>=2.0.0",
     ],
@@ -36,9 +38,6 @@ setup(
             "pytest-cov>=4.0.0",
             "black>=23.0.0",
         ],
-    },
-    package_data={
-        "chimeradb": ["extensions/*.dylib", "extensions/*.so"],
     },
     include_package_data=True,
 )

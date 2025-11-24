@@ -18,11 +18,11 @@ in ONE query. This is crucial for:
   • Chatbots that need context
   • Any LLM application that references external data
 
-Hybrid Queries: Cypher + SQL
------------------------------
+Hybrid Queries: Graph Traversal + SQL
+--------------------------------------
 Best practice is to combine graph and relational queries:
 
-  1. CYPHER: Find relevant entities using graph patterns
+  1. Graph Traversal: Find relevant entities using relationships
      Example: "Find all servers connected to the web tier"
 
   2. SQL: Aggregate/analyze the data from those entities
@@ -41,8 +41,9 @@ We'll build a system monitoring graph:
   • Use SQL to aggregate metrics
 """
 
-import sys
-sys.path.insert(0, '..')
+# Fix for Python 3.13 multiprocessing issues with sentence-transformers
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from chimeradb import KnowledgeGraph
 import json
@@ -65,7 +66,9 @@ Why embeddings?
   • Find relevant data based on MEANING, not just keywords""")
 
 # Create graph with auto-embedding enabled (by default!)
-kg = KnowledgeGraph(db_path="monitoring.db")
+from datetime import datetime as dt
+timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+kg = KnowledgeGraph(db_path=f"monitoring_{timestamp}.db")
 
 print("✓ Graph initialized with auto-embeddings (all-MiniLM-L6-v2)")
 
@@ -118,7 +121,7 @@ for server in servers:
     # The auto_embed=True setting will automatically generate embeddings from 'text' field
     kg.add_entity(
         entity_id=server["id"],
-        labels=["Server"],  # Add label for Cypher queries
+        labels=["Server"],  # Add label for filtering/querying
         properties=server,
         embed_field="text"  # Use the 'text' field for embedding
     )
@@ -145,7 +148,7 @@ print("""
 [3/6] Creating Timeseries Metrics Table...
 
 Note: Timeseries data often lives in a separate table, not the graph.
-      We'll use Cypher to find servers, then SQL to query their metrics.""")
+      We'll use SQL to find servers, then aggregate their metrics.""")
 
 # Create a traditional SQL table for metrics
 kg.conn.execute("""
@@ -233,27 +236,26 @@ print("\n💡 Key Point: Graph traversal naturally expresses 'what depends on wh
 print("   Much simpler than recursive SQL joins!")
 
 # ============================================================================
-# PART 6: Hybrid Query - Cypher + SQL
+# PART 6: Hybrid Query - Graph + SQL
 # ============================================================================
-print("\n[6/6] Hybrid Query - Cypher for Graph, SQL for Aggregation")
+print("\n[6/6] Hybrid Query - Graph Queries + SQL Aggregation")
 print("\n" + "-" * 80)
 print("Scenario: Find avg CPU usage of all web servers and their direct dependencies")
 print("-" * 80)
 
-print("\nStep 1: Use Cypher to find relevant servers (graph pattern)")
-cypher_query = "MATCH (s:Server) RETURN s"
-print(f"Cypher: {cypher_query}")
+print("\nStep 1: Use SQL to find relevant servers (from graph)")
+print("Query: SELECT all nodes with Server label")
 print("(Finding all Server nodes)")
 
-# Use the cypher_query() method which extracts node IDs
-node_ids = kg.cypher_query(cypher_query)
-
-# Get server IDs from node properties
-server_ids = []
-for nid in node_ids:
-    node = kg.get_entity(str(nid))
-    if node and 'id' in node['properties']:
-        server_ids.append(node['properties']['id'])
+# Use SQL to query nodes table directly
+# Note: json_extract_string removes quotes, json_extract keeps them
+sql_query = """
+    SELECT id, json_extract_string(properties, 'id') as server_id
+    FROM nodes
+    WHERE labels LIKE '%Server%'
+"""
+results = kg.conn.execute(sql_query).fetchall()
+server_ids = [row[1] for row in results if row[1]]
 
 print(f"Found {len(server_ids)} servers: {sorted(server_ids)}")
 
@@ -283,7 +285,7 @@ if server_ids:
         print(f"  {server_id:12} | {cpu:7.1f}% | {memory:9.1f}% | {requests:12.0f}")
 
 print("\n💡 Key Point: Hybrid queries give you the best of both worlds!")
-print("   • Cypher: Expressive graph patterns")
+print("   • Graph traversal: Follow relationships naturally")
 print("   • SQL: Powerful aggregations and analytics")
 
 # ============================================================================
@@ -306,9 +308,9 @@ print("""
    • Perfect for: dependencies, social networks, org charts
 
 3. Hybrid Queries (The Secret Sauce)
-   • Cypher: Find entities using graph patterns
+   • Graph traversal: Find entities using relationships
    • SQL: Aggregate/analyze those entities
-   • Example: Cypher finds servers → SQL calculates metrics
+   • Example: Traversal finds servers → SQL calculates metrics
    • Best practice for production systems
 
 4. Real-World Architecture
