@@ -1,8 +1,8 @@
 # ChimeraDB
 
-**Knowledge graph + vector search + SQL analytics in SQLite.**
+**Semantic search + graph queries + SQL analytics. All in one SQLite file.**
 
-For LLM apps that need structured memory: RAG, AI agents, question answering, recommendations.
+The only database that combines vector embeddings, Cypher graph patterns, and full SQL for LLM apps. No separate vector DB, no separate graph DB, no infrastructure.
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -20,39 +20,54 @@ pip install chimeradb
 ```python
 from chimeradb import KnowledgeGraph
 
-# Auto-embeddings enabled by default
-kg = KnowledgeGraph("my.db")
+kg = KnowledgeGraph("my.db")  # Auto-embeddings enabled
 
-# Create nodes with Cypher
-kg.cypher("CREATE (d:Document {text: 'LLMs are transforming software'})")
-kg.cypher("CREATE (d:Document {text: 'RAG combines retrieval with generation'})")
+# 1. Vector embeddings - semantic search
+kg.cypher("CREATE (p:Person {name: 'Alice', bio: 'ML engineer building LLM agents'})")
+kg.cypher("CREATE (p:Person {name: 'Bob', bio: 'AI researcher focused on NLP'})")
 
-# Or bulk insert with SQL
-import json
-kg.execute(
-    "INSERT INTO graph_nodes (labels, properties) VALUES (?, ?)",
-    (json.dumps(["Document"]), json.dumps({"text": "Vector databases enable semantic search"}))
-)
-kg.commit()
+results = kg.search("who works on language models?", top_k=2)
+# Finds both Alice and Bob even though query doesn't match exactly
 
-# Semantic search
-results = kg.search("how do AI apps work?", top_k=3)
-for r in results:
-    print(f"{r['properties']['text'][:50]}: {r['similarity']:.1%}")
+# 2. Cypher - graph relationships
+kg.cypher("CREATE (alice:Person {name: 'Alice'})")
+kg.cypher("CREATE (bob:Person {name: 'Bob'})")
+kg.cypher("CREATE (acme:Company {name: 'Acme AI'})")
+kg.cypher("MATCH (alice:Person {name: 'Alice'}), (acme:Company) CREATE (alice)-[:WORKS_AT]->(acme)")
 
-# Graph traversal
-network = kg.traverse("node_id", direction="outgoing", max_depth=3)
+# Simple pattern matching - no messy SQL joins
+colleagues = kg.cypher("MATCH (p:Person)-[:WORKS_AT]->(:Company)<-[:WORKS_AT]-(colleague) RETURN colleague")
 
-# SQL analytics
-stats = kg.query("SELECT COUNT(*) FROM graph_nodes")
+# 3. SQL - analytics and aggregation
+stats = kg.query("""
+    SELECT
+        json_extract(properties, '$.name') as company,
+        COUNT(*) as employee_count
+    FROM graph_nodes
+    WHERE labels LIKE '%Company%'
+    GROUP BY company
+""")
+
+# The power: combine all three in one query!
 ```
 
-## What You Get
+## Why ChimeraDB?
 
-- **Semantic search**: Embeddings auto-generated on every insert
-- **Graph queries**: Cypher for patterns, SQL for complex analytics
-- **Zero infrastructure**: Single SQLite file, runs anywhere
-- **Any language**: Pure SQL extensions work with Python, Node.js, Go, Rust, etc.
+**Three powerful tools, one simple database:**
+
+1. **Vector embeddings** - Search by meaning, not keywords. Find "machine learning expert" when the text says "AI researcher"
+2. **Cypher graph queries** - Express relationships naturally: `MATCH (person)-[:WORKS_AT]->(company)` beats complex SQL joins
+3. **Full SQL analytics** - Aggregate, filter, join with the full power of SQLite when you need it
+
+**The combination is the killer feature:**
+- RAG systems: Semantic search + relationship context
+- AI agents: Graph traversal + analytical reasoning
+- Recommendations: Similarity search + collaborative filtering
+
+**Zero infrastructure:**
+- One SQLite file
+- Runs anywhere (laptop, server, edge device)
+- Works with any language (Python, Node.js, Go, Rust...)
 
 ## Installation
 
