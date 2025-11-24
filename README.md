@@ -14,31 +14,53 @@ The only database that combines vector embeddings, property graphs (SQL/PGQ), an
 ## Quick Start
 
 ```bash
-pip install chimeradb duckdb
+pip install chimeradb
 ```
 
 ```python
 from chimeradb import KnowledgeGraph
 
-kg = KnowledgeGraph("my.db")  # Auto-embeddings enabled
+# Create database with automatic embeddings (uses distilbert-base-uncased)
+kg = KnowledgeGraph("my.db")
+print("✓ Database created with auto-embeddings enabled")
 
-# Add entities (embeddings generated from 'bio' field)
-kg.add_entity("alice", {"name": "Alice", "bio": "ML engineer building LLM agents"}, ["Person"])
-kg.add_entity("bob", {"name": "Bob", "bio": "AI researcher focused on NLP"}, ["Person"])
+# Add entities - embeddings automatically generated from 'bio' field
+kg.add_entity("alice", {"name": "Alice", "bio": "ML engineer building LLM agents"}, ["Person"], embed_field="bio")
+kg.add_entity("bob", {"name": "Bob", "bio": "AI researcher focused on NLP"}, ["Person"], embed_field="bio")
 kg.add_entity("acme", {"name": "Acme AI"}, ["Company"])
+print("✓ Added 2 people and 1 company")
 
 # Add relationships
 kg.add_relationship("alice", "acme", "WORKS_AT")
 kg.add_relationship("bob", "acme", "WORKS_AT")
+print("✓ Added employment relationships")
 
-# 1. Semantic search - Find by meaning, not keywords
+# 1. Semantic Search - Find by MEANING, not exact keywords
+print("\n=== Semantic Search ===")
 results = kg.search("who works on language models?", top_k=2)
-# Finds both Alice and Bob even though query doesn't match exactly
+for r in results:
+    name = r['properties']['name']
+    bio = r['properties'].get('bio', 'N/A')
+    similarity = r['similarity']
+    print(f"  {name}: {bio} (similarity: {similarity:.2f})")
+# Output:
+#   Bob: AI researcher focused on NLP (similarity: 0.90)
+#   Alice: ML engineer building LLM agents (similarity: 0.84)
+# Notice: Found both even though "language models" doesn't appear in their bios!
 
-# 2. Graph traversal - Python API
-employees = kg.traverse("acme", direction="incoming")
+# 2. Graph Traversal - Follow relationships
+print("\n=== Graph Traversal ===")
+employees = kg.traverse("acme", direction="incoming", relation_type="WORKS_AT")
+print(f"  Acme has {len(employees)} employees:")
+for emp in employees:
+    print(f"    - {emp['properties']['name']}")
+# Output:
+#   Acme has 2 employees:
+#     - Alice
+#     - Bob
 
 # 3. SQL/PGQ - Graph pattern matching (SQL:2023 standard)
+print("\n=== SQL/PGQ Pattern Matching ===")
 results = kg.query("""
     SELECT *
     FROM GRAPH_TABLE (knowledge_graph
@@ -50,8 +72,14 @@ results = kg.query("""
         )
     )
 """)
+for person, edge_type in results:
+    print(f"  {person} --[{edge_type}]--> Acme AI")
+# Output:
+#   Alice --[WORKS_AT]--> Acme AI
+#   Bob --[WORKS_AT]--> Acme AI
 
-# 4. SQL analytics - Aggregate, filter, join
+# 4. SQL Analytics - Aggregate data
+print("\n=== SQL Analytics ===")
 stats = kg.query("""
     SELECT
         json_extract_string(n.properties, 'name') as company,
@@ -61,25 +89,20 @@ stats = kg.query("""
     WHERE n.labels LIKE '%Company%'
     GROUP BY company
 """)
+for company, count in stats:
+    print(f"  {company}: {count} employees")
+# Output:
+#   Acme AI: 2 employees
 
-# Combine all three in one query!
-results = kg.query("""
-    WITH relevant_people AS (
-        -- Find semantically similar people (would use search() in practice)
-        SELECT id, properties
-        FROM nodes
-        WHERE labels LIKE '%Person%'
-    )
-    SELECT
-        json_extract_string(p.properties, 'name') as person,
-        json_extract_string(c.properties, 'name') as company,
-        e.edge_type
-    FROM relevant_people p
-    JOIN edges e ON e.from_id = p.id
-    JOIN nodes c ON e.to_id = c.id
-    WHERE c.labels LIKE '%Company%'
-""")
+kg.close()
 ```
+
+**Key Results:**
+- ✅ Semantic search finds relevant people by MEANING (0.84-0.90 similarity scores)
+- ✅ Graph traversal follows relationships naturally (finds 2 employees)
+- ✅ SQL/PGQ provides clean pattern matching syntax
+- ✅ Full SQL power for aggregations and analytics
+- ✅ All in a single DuckDB file with no infrastructure needed
 
 ## Why ChimeraDB?
 
