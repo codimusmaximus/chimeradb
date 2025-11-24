@@ -122,16 +122,16 @@ class KnowledgeGraph:
         try:
             self.conn.execute("""
                 CREATE OR REPLACE PROPERTY GRAPH knowledge_graph
-                VERTEX TABLES (nodes PROPERTIES (id, labels, properties))
+                VERTEX TABLES (nodes)
                 EDGE TABLES (
                     edges
                     SOURCE KEY (from_id) REFERENCES nodes (id)
                     DESTINATION KEY (to_id) REFERENCES nodes (id)
-                    PROPERTIES (edge_type, properties)
                 )
             """)
         except Exception as e:
-            # Property graph might already exist or duckpgq not available
+            # Property graph might not be available if duckpgq failed to load
+            warnings.warn(f"Failed to create property graph: {e}")
             pass
 
     def add_entity(

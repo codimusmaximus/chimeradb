@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="chimeradb",
-    version="0.2.0",
+    version="0.2.1",
     author="Alexander Leirvåg",
     author_email="alexander@prismeta.com",
     description="Knowledge graph + vector search + SQL analytics powered by DuckDB",
@@ -28,7 +28,7 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        "duckdb>=1.1.3",
+        "duckdb>=1.1.3,<1.2.0",  # Pin to 1.1.x for duckpgq compatibility
         "numpy>=1.20.0",
         "sentence-transformers>=2.0.0",
     ],
