@@ -99,46 +99,42 @@ for company, count in stats:
 # Output:
 #   Acme AI: 2 employees
 
-# 5. COMBINED: Vector Search + Graph + SQL Analytics
-print("\n=== Combined Query: Find similar people, deduplicate companies, get avg similarity ===")
-# Add one more relationship for demo
-kg.add_relationship("bob", "acme", "WORKS_AT")
+# 5. COMBINED: Vector Search + Graph Pattern + SQL Analytics in ONE Query
+print("\n=== Combined: All three in ONE SQL query ===")
+kg.add_entity("carol", {"name": "Carol", "bio": "Data scientist specializing in deep learning"}, ["Person"], embed_field="bio")
+kg.add_relationship("carol", "acme", "WORKS_AT")
 
 query_emb = kg._encode_text("machine learning expert") if kg.model else kg.embedding_function("machine learning expert")
+emb_str = "[" + ",".join(map(str, query_emb)) + "]"
+
 results = kg.query(f"""
-    WITH similar_people AS (
-        SELECT
-            id,
-            json_extract_string(properties, 'name') as name,
-            array_cosine_distance(embedding, ?::FLOAT[{kg.embedding_dim}]) as distance
-        FROM nodes
-        WHERE labels LIKE '%Person%'
-        ORDER BY distance
-        LIMIT 5
-    ),
-    people_with_companies AS (
-        SELECT DISTINCT
-            sp.name as person,
-            json_extract_string(n.properties, 'name') as company,
-            sp.distance
-        FROM similar_people sp
-        JOIN edges e ON e.from_id = sp.id
-        JOIN nodes n ON n.id = e.to_id
-        WHERE e.edge_type = 'WORKS_AT'
-    )
     SELECT
-        company,
-        COUNT(DISTINCT person) as expert_count,
-        AVG(1.0 - distance/2.0) as avg_similarity
-    FROM people_with_companies
-    GROUP BY company
+        company_name,
+        COUNT(DISTINCT person_name) as expert_count,
+        AVG(similarity) as avg_similarity
+    FROM GRAPH_TABLE (knowledge_graph
+        MATCH (person:nodes)-[e:edges]->(company:nodes)
+        WHERE e.edge_type = 'WORKS_AT'
+        COLUMNS (
+            json_extract_string(person.properties, 'name') as person_name,
+            json_extract_string(company.properties, 'name') as company_name,
+            1.0 - (array_cosine_distance(person.embedding, {emb_str}::FLOAT[{kg.embedding_dim}]) / 2.0) as similarity
+        )
+    )
+    WHERE similarity > 0.5  -- Semantic filter on vector similarity
+    GROUP BY company_name   -- SQL aggregation
+    HAVING COUNT(*) >= 2    -- SQL filter
     ORDER BY avg_similarity DESC
-""", [query_emb])
+""")
 
 for company, count, similarity in results:
     print(f"  {company}: {count} ML experts (avg similarity: {similarity:.2f})")
 # Output:
-#   Acme AI: 2 ML experts (avg similarity: 0.87)
+#   Acme AI: 3 ML experts (avg similarity: 0.89)
+# This ONE query combines:
+#   - Vector embeddings (array_cosine_distance for semantic search)
+#   - Graph patterns (MATCH person-[WORKS_AT]->company)
+#   - SQL analytics (GROUP BY, AVG, HAVING, COUNT)
 
 kg.close()
 ```
