@@ -253,8 +253,11 @@ class KnowledgeGraph:
                     embedding = self._encode_text(text)
 
         # Insert or update node
+        # Note: DuckDB doesn't support updating array columns with INSERT OR REPLACE,
+        # so we DELETE first then INSERT (which is what INSERT OR REPLACE does anyway)
+        self.conn.execute("DELETE FROM nodes WHERE id = ?", [entity_id])
         self.conn.execute("""
-            INSERT OR REPLACE INTO nodes (id, labels, properties, embedding)
+            INSERT INTO nodes (id, labels, properties, embedding)
             VALUES (?, ?, ?::JSON, ?)
         """, [entity_id, labels_json, properties_json, embedding])
 
