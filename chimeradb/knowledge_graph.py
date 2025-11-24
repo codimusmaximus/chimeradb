@@ -83,21 +83,55 @@ class KnowledgeGraph:
 
     def _load_extensions(self):
         """Load sqlite-graph and sqlite-vector extensions"""
+        import platform
         ext_dir = Path(__file__).parent / "extensions"
+
+        # Detect architecture
+        arch = platform.machine().lower()
+        arch_display = arch
+
+        # Normalize architecture names
+        if arch in ('x86_64', 'amd64', 'x64'):
+            arch_normalized = 'x86_64'
+        elif arch in ('aarch64', 'arm64'):
+            arch_normalized = 'arm64'
+        else:
+            arch_normalized = arch
+
+        # On Linux, preload libsqlite3 with RTLD_GLOBAL to make symbols available
+        # This fixes "undefined symbol: sqlite3_free" errors with extensions
+        if sys.platform.startswith("linux"):
+            import ctypes
+            try:
+                ctypes.CDLL('/lib/x86_64-linux-gnu/libsqlite3.so.0', mode=ctypes.RTLD_GLOBAL)
+            except OSError:
+                # Try alternative paths
+                try:
+                    ctypes.CDLL('libsqlite3.so.0', mode=ctypes.RTLD_GLOBAL)
+                except OSError:
+                    pass  # Will fail later with better error message if extensions don't load
 
         # Determine platform and extension names/URLs
         if sys.platform == "darwin":
-            import platform
-            arch = platform.machine()
             graph_name = "libgraph.dylib"
             vector_name = "vector.dylib"
-            vector_url = "https://github.com/sqliteai/sqlite-vector/releases/latest/download/vector-macos-arm64.dylib" if arch == "arm64" else "https://github.com/sqliteai/sqlite-vector/releases/latest/download/vector-macos-x86_64.dylib"
+            vector_url = "https://github.com/sqliteai/sqlite-vector/releases/latest/download/vector-macos-arm64.dylib" if arch_normalized == "arm64" else "https://github.com/sqliteai/sqlite-vector/releases/latest/download/vector-macos-x86_64.dylib"
             graph_url = "https://github.com/agentflare-ai/sqlite-graph/releases/latest/download/libgraph.dylib"
+            platform_name = f"macOS ({arch_display})"
         elif sys.platform.startswith("linux"):
             graph_name = "libgraph.so"
             vector_name = "vector.so"
             vector_url = "https://github.com/sqliteai/sqlite-vector/releases/latest/download/vector-linux-x86_64.so"
             graph_url = "https://github.com/agentflare-ai/sqlite-graph/releases/latest/download/libgraph.so"
+            platform_name = f"Linux ({arch_display})"
+
+            # Check if we're on a supported Linux architecture
+            if arch_normalized != 'x86_64':
+                raise RuntimeError(
+                    f"Linux {arch_display} is not supported. ChimeraDB currently only supports Linux x86_64. "
+                    f"For ARM64/aarch64 support, please build extensions from source: "
+                    f"https://github.com/agentflare-ai/sqlite-graph and https://github.com/sqliteai/sqlite-vector"
+                )
         else:
             raise RuntimeError(f"Unsupported platform: {sys.platform}. ChimeraDB currently supports macOS and Linux.")
 
@@ -110,6 +144,8 @@ class KnowledgeGraph:
 
         graph_loaded = False
         vector_loaded = False
+        graph_load_error = None
+        vector_load_error = None
 
         for base_path in possible_paths:
             if not graph_loaded:
@@ -123,11 +159,14 @@ class KnowledgeGraph:
                         self.conn.load_extension(str(graph_path).replace(".dylib", "").replace(".so", ""))
                         graph_loaded = True
                     except sqlite3.OperationalError as e:
-                        if "not authorized" in str(e).lower():
+                        error_msg = str(e).lower()
+                        if "not authorized" in error_msg:
                             raise RuntimeError(
                                 "SQLite extensions are disabled. "
                                 "If using Colab/Jupyter, you may need to use a custom SQLite build that allows extensions."
                             )
+                        # Store error for later reporting
+                        graph_load_error = str(e)
 
             if not vector_loaded:
                 vector_path = base_path / vector_name
@@ -140,27 +179,32 @@ class KnowledgeGraph:
                         self.conn.load_extension(str(vector_path).replace(".dylib", "").replace(".so", ""))
                         vector_loaded = True
                     except sqlite3.OperationalError as e:
-                        if "not authorized" in str(e).lower():
+                        error_msg = str(e).lower()
+                        if "not authorized" in error_msg:
                             raise RuntimeError(
                                 "SQLite extensions are disabled. "
                                 "If using Colab/Jupyter, you may need to use a custom SQLite build that allows extensions."
                             )
+                        # Store error for later reporting
+                        vector_load_error = str(e)
 
             if graph_loaded and vector_loaded:
                 break
 
         if not graph_loaded:
+            error_details = f" SQLite error: {graph_load_error}" if graph_load_error else ""
             raise RuntimeError(
-                f"Could not load graph extension. "
-                f"Tried to find {graph_name} in {ext_dir}. "
-                "Make sure SQLite extension loading is enabled."
+                f"Could not load graph extension on {platform_name}. "
+                f"Tried to find {graph_name} in {ext_dir}.{error_details} "
+                f"Make sure SQLite extension loading is enabled and the binary is compatible with your architecture."
             )
 
         if not vector_loaded:
+            error_details = f" SQLite error: {vector_load_error}" if vector_load_error else ""
             raise RuntimeError(
-                f"Could not load vector extension. "
-                f"Tried to find {vector_name} in {ext_dir}. "
-                "Make sure SQLite extension loading is enabled."
+                f"Could not load vector extension on {platform_name}. "
+                f"Tried to find {vector_name} in {ext_dir}.{error_details} "
+                f"Make sure SQLite extension loading is enabled and the binary is compatible with your architecture."
             )
 
     def _init_schema(self):

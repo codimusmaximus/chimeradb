@@ -78,9 +78,10 @@ pip install chimeradb
 ```
 
 **Platform Support:**
-- ✅ macOS (Intel & ARM64)
-- ✅ Linux (x86_64)
-- ⚠️ Windows: Not tested. For Windows users, build extensions manually from [sqlite-graph](https://github.com/agentflare-ai/sqlite-graph) and [sqlite-vector](https://github.com/sqliteai/sqlite-vector) source, or use WSL.
+- ✅ macOS (Intel x86_64 & Apple Silicon ARM64)
+- ✅ Linux (x86_64 only)
+- ❌ Linux ARM64: Not supported yet. Build extensions from source: [sqlite-graph](https://github.com/agentflare-ai/sqlite-graph) and [sqlite-vector](https://github.com/sqliteai/sqlite-vector)
+- ⚠️ Windows: Not tested. Use WSL (x86_64) or build extensions manually from source.
 
 Or from source:
 ```bash
