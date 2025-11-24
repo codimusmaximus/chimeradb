@@ -150,60 +150,46 @@ ChimeraDB automatically installs these DuckDB extensions:
 - **duckpgq**: Property graph queries with SQL/PGQ
 - **vss**: Vector similarity search with HNSW indexing
 
-## Python API
+## How LLMs Use ChimeraDB
 
+LLMs can reason iteratively by combining three capabilities:
+
+**1. RAG (Semantic Search)** → Find relevant starting points
 ```python
-from chimeradb import KnowledgeGraph
-
-# Create database
-kg = KnowledgeGraph("my_graph.db")  # Or ":memory:"
-
-# Optional: disable embeddings or use different model
-# kg = KnowledgeGraph("my.db", embedding_model=None)
-# kg = KnowledgeGraph("my.db", embedding_model="text-embedding-3-small")
-
-# Add nodes
-kg.add_entity(
-    entity_id="person1",
-    properties={"name": "Alice", "bio": "AI researcher"},
-    labels=["Person"],
-    embed_field="bio"  # Auto-generate embedding from this field
-)
-
-# Add relationships
-kg.add_relationship(
-    from_id="person1",
-    to_id="company1",
-    relation_type="WORKS_AT",
-    properties={"since": 2020}
-)
-
-# Semantic search
-results = kg.search("machine learning expert", top_k=10)
-
-# Graph traversal (recursive SQL)
-network = kg.traverse("person1", direction="outgoing", max_depth=3)
-
-# SQL/PGQ pattern matching
-results = kg.query("""
-    SELECT *
-    FROM GRAPH_TABLE (knowledge_graph
-        MATCH (p:nodes)-[w:edges]->(c:nodes)
-        WHERE p.labels LIKE '%Person%'
-          AND c.labels LIKE '%Company%'
-        COLUMNS (p.id, w.edge_type, c.id)
-    )
-""")
-
-# Raw SQL queries
-data = kg.query("""
-    SELECT json_extract(properties, '$.name') as name
-    FROM nodes
-    WHERE json_extract(properties, '$.role') = 'Engineer'
-""")
-
-kg.close()
+# Find papers related to "transformer attention mechanisms"
+papers = kg.search("transformer attention mechanisms", top_k=5)
+paper_ids = [p['id'] for p in papers]  # ['paper_123', 'paper_456', ...]
 ```
+
+**2. Graph Traversal** → Gather context by following relationships
+```python
+# For each relevant paper, find authors, citations, and related work
+for paper_id in paper_ids:
+    authors = kg.traverse(paper_id, direction="outgoing", relation_type="AUTHORED_BY")
+    citations = kg.traverse(paper_id, direction="incoming", relation_type="CITES")
+    # Now we have: similar papers + their authors + who cited them
+```
+
+**3. SQL Analytics** → Aggregate insights and make decisions
+```python
+# Which author has the most cited papers on this topic?
+results = kg.query("""
+    SELECT
+        json_extract_string(a.properties, 'name') as author,
+        COUNT(DISTINCT c.from_id) as citation_count
+    FROM nodes p
+    JOIN edges authored ON authored.from_id = p.id
+    JOIN nodes a ON a.id = authored.to_id
+    JOIN edges c ON c.to_id = p.id
+    WHERE p.id IN (?, ?, ?, ?, ?)  -- Our relevant papers
+    GROUP BY author
+    ORDER BY citation_count DESC
+    LIMIT 1
+""", paper_ids)
+# Result: "Attention is All You Need" authors → LLM knows who to follow
+```
+
+**Why this matters**: Each step informs the next. RAG finds relevant content, graphs provide context, SQL enables reasoning. The LLM can loop through this process, refining its understanding with each iteration.
 
 ## Examples
 
