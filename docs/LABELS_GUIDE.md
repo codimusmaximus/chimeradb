@@ -62,7 +62,7 @@ CREATE TABLE graph_nodes (
 ### Example 1: Insert with SQL, include labels
 
 ```python
-from sqlite_kg import KnowledgeGraph
+from chimeradb import KnowledgeGraph
 import json
 
 kg = KnowledgeGraph(db_path="test.db")

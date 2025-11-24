@@ -48,7 +48,7 @@ for nid in node_ids:
 If using raw `cypher_execute()`, use the utility functions:
 
 ```python
-from sqlite_kg import extract_node_ids
+from chimeradb import extract_node_ids
 
 result = kg.conn.execute("SELECT cypher_execute('MATCH (p:Person) RETURN p')").fetchone()
 node_ids = extract_node_ids(result[0])
@@ -215,7 +215,7 @@ SELECT DISTINCT id FROM paths
 ### Example 1: Find and Analyze
 
 ```python
-from sqlite_kg import KnowledgeGraph
+from chimeradb import KnowledgeGraph
 
 kg = KnowledgeGraph("my_graph.db")
 

@@ -94,7 +94,7 @@ python
 ```
 
 ```python
-from sqlite_kg import KnowledgeGraph
+from chimeradb import KnowledgeGraph
 
 # Create knowledge graph
 kg = KnowledgeGraph()
@@ -150,20 +150,16 @@ SELECT * FROM graph_nodes;
 ### 1. Create a Knowledge Graph
 
 ```python
-from sqlite_kg import KnowledgeGraph
+from chimeradb import KnowledgeGraph
 
-# In-memory (temporary)
+# In-memory (temporary, with auto-embeddings)
 kg = KnowledgeGraph()
 
-# Persistent (saved to disk)
+# Persistent (saved to disk, with auto-embeddings)
 kg = KnowledgeGraph(db_path="my_graph.db")
 
-# With embeddings (requires sentence-transformers)
-kg = KnowledgeGraph(
-    db_path="my_graph.db",
-    embedding_model="sentence-transformers/all-MiniLM-L6-v2",
-    auto_embed=True
-)
+# Optional: disable embeddings
+kg = KnowledgeGraph(db_path="my_graph.db", embedding_model=None)
 ```
 
 ### 2. Add Entities
@@ -180,10 +176,9 @@ kg.add_entity("2", {
     "location": "San Francisco"
 })
 
-# Auto-generate embedding (if model configured)
+# Auto-generate embedding (happens automatically!)
 kg.add_entity("3",
     {"text": "Expert in machine learning and NLP"},
-    auto_embed=True,
     embed_field="text"
 )
 ```
@@ -219,7 +214,7 @@ print(entity)  # {"id": 1, "properties": {...}}
 neighbors = kg.get_neighbors("1", relation_type="KNOWS")
 ```
 
-### 5. Semantic Search (if embeddings configured)
+### 5. Semantic Search (auto-enabled)
 
 ```python
 # Search for similar entities
@@ -263,7 +258,7 @@ ls -lh extensions/
 source venv/bin/activate
 
 # Verify Python can find the module
-python -c "import sqlite_kg; print('OK')"
+python -c "import chimeradb; print('OK')"
 ```
 
 ### Database locked errors
@@ -295,7 +290,7 @@ sqlite-kg/
 ├── setup.py               # Python package setup
 ├── requirements.txt       # Dependencies
 │
-├── sqlite_kg/             # Main package
+├── chimeradb/             # Main package
 │   ├── __init__.py
 │   ├── knowledge_graph.py # KnowledgeGraph class
 │   └── embeddings.py      # Embedding utilities
@@ -326,7 +321,7 @@ python examples/02_rag_system.py
 
 # Interactive Python
 python
->>> from sqlite_kg import KnowledgeGraph
+>>> from chimeradb import KnowledgeGraph
 >>> kg = KnowledgeGraph()
 
 # Deactivate environment

@@ -137,23 +137,6 @@ kg.close()
 - **[02_basic.py](examples/02_basic.py)**: Semantic search + graph traversal + SQL analytics
 - **[03_advanced.py](examples/03_advanced.py)**: Research paper recommendations with graph analysis
 
-## Performance
-
-M1 MacBook Pro:
-- **Inserts**: 10,000+ nodes/second
-- **Vector search**: < 1ms for 100k embeddings
-- **Storage**: ~500 bytes per node (with 384-dim embeddings)
-
-Good for:
-- Prototypes and MVPs
-- Small-to-medium apps (millions of nodes)
-- Edge AI and on-device intelligence
-
-Not designed for:
-- Billions of nodes
-- Distributed systems
-- High-write concurrent workloads
-
 ## Requirements
 
 - Python 3.8+

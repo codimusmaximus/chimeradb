@@ -1,25 +1,28 @@
-# Getting Started with SQLite Knowledge Graph
+# Getting Started with ChimeraDB
 
-Complete guide to running the library from scratch on a fresh system.
+Complete guide to installing and using ChimeraDB.
 
-## Prerequisites
+## Quick Install (Recommended)
+
+```bash
+pip install chimeradb
+```
+
+That's it! You're ready to use ChimeraDB.
+
+## Development Setup (From Source)
+
+### Prerequisites
 
 - **macOS** (ARM64 or Intel)
 - **Python 3.8+**
-- **Git** (optional, for cloning)
+- **Git**
 
-## Step-by-Step Setup
-
-### 1. Clone or Download the Repository
+### 1. Clone the Repository
 
 ```bash
-# Option A: Clone with git
-git clone <repository-url>
-cd sqlite-kg
-
-# Option B: Download and extract ZIP
-# Then navigate to the directory
-cd sqlite-kg
+git clone https://github.com/codimusmaximus/chimeradb.git
+cd chimeradb
 ```
 
 ### 2. Run Automated Setup
@@ -35,7 +38,7 @@ This script will:
 - ✅ Install Python dependencies
 - ✅ Download sqlite-graph extension (Cypher support)
 - ✅ Download sqlite-vector extension (semantic search)
-- ✅ Install the sqlite_kg package in editable mode
+- ✅ Install the chimeradb package in editable mode
 
 **Note:** If you don't have `uv` installed, the script will install it automatically.
 
@@ -51,7 +54,7 @@ You should see `(.venv)` in your terminal prompt.
 
 ```bash
 # Quick test
-python3 -c "from sqlite_kg import KnowledgeGraph; print('✓ Installation successful!')"
+python3 -c "from chimeradb import KnowledgeGraph; print('✓ Installation successful!')"
 ```
 
 ## Running the Examples
@@ -152,7 +155,7 @@ ls -t examples/*.db | tail -n +4 | xargs rm -f
 ### Create Your Own Knowledge Graph
 
 ```python
-from sqlite_kg import KnowledgeGraph
+from chimeradb import KnowledgeGraph
 
 # Create a new graph
 kg = KnowledgeGraph("my_graph.db")
@@ -175,15 +178,10 @@ kg.close()
 ### With Semantic Search
 
 ```python
-from sqlite_kg import KnowledgeGraph
+from chimeradb import KnowledgeGraph
 
-# Enable auto-embedding
-kg = KnowledgeGraph(
-    "semantic_graph.db",
-    embedding_model="all-MiniLM-L6-v2",
-    embedding_dim=384,
-    auto_embed=True
-)
+# Auto-embeddings enabled by default!
+kg = KnowledgeGraph("semantic_graph.db")
 
 # Add entities (embeddings generated automatically)
 kg.add_entity(
@@ -202,7 +200,7 @@ kg.close()
 
 ## Troubleshooting
 
-### Issue: `ModuleNotFoundError: No module named 'sqlite_kg'`
+### Issue: `ModuleNotFoundError: No module named 'chimeradb'`
 
 **Solution:** Install the package in editable mode:
 ```bash
