@@ -1,259 +1,271 @@
 # Getting Started with ChimeraDB
 
-Complete guide to installing and using ChimeraDB.
+Complete guide to installing and using ChimeraDB - the database that combines vector embeddings, property graphs, and SQL analytics in one DuckDB file.
 
-## Quick Install (Recommended)
+## Quick Install
 
 ```bash
 pip install chimeradb
 ```
 
-That's it! You're ready to use ChimeraDB.
+That's it! ChimeraDB automatically installs:
+- DuckDB 1.1.3+
+- DuckDB extensions (duckpgq for graphs, vss for vector search)
+- Transformers + PyTorch for embeddings
 
-## Development Setup (From Source)
+## Quick Start
 
-### Prerequisites
+```python
+from chimeradb import KnowledgeGraph
 
-- **macOS** (ARM64 or Intel)
-- **Python 3.8+**
-- **Git**
+# Create database with auto-embeddings
+kg = KnowledgeGraph("my.db")
 
-### 1. Clone the Repository
+# Add entities with embeddings
+kg.add_entity("alice", {"name": "Alice", "bio": "ML engineer"}, ["Person"], embed_field="bio")
+kg.add_entity("bob", {"name": "Bob", "bio": "AI researcher"}, ["Person"], embed_field="bio")
+kg.add_entity("acme", {"name": "Acme AI"}, ["Company"])
 
-```bash
-git clone https://github.com/codimusmaximus/chimeradb.git
-cd chimeradb
-```
+# Add relationships
+kg.add_relationship("alice", "acme", "WORKS_AT")
+kg.add_relationship("bob", "acme", "WORKS_AT")
 
-### 2. Run Automated Setup
+# 1. Semantic search
+results = kg.search("machine learning expert", top_k=2)
+for r in results:
+    print(f"{r['properties']['name']}: {r['similarity']:.2f}")
 
-The setup script handles everything automatically:
+# 2. Graph traversal
+employees = kg.traverse("acme", direction="incoming", relation_type="WORKS_AT")
+print(f"Acme has {len(employees)} employees")
 
-```bash
-./setup.sh
-```
+# 3. SQL/PGQ graph queries
+results = kg.query("""
+    SELECT *
+    FROM GRAPH_TABLE (knowledge_graph
+        MATCH (p:nodes)-[e:edges]->(c:nodes)
+        WHERE c.id = 'acme'
+        COLUMNS (
+            json_extract_string(p.properties, 'name') as person,
+            e.edge_type
+        )
+    )
+""")
 
-This script will:
-- ✅ Create a Python virtual environment with `uv`
-- ✅ Install Python dependencies
-- ✅ Download sqlite-graph extension (Cypher support)
-- ✅ Download sqlite-vector extension (semantic search)
-- ✅ Install the chimeradb package in editable mode
+# 4. Combined: Vector + Graph + SQL in ONE query
+query_emb = kg._encode_text("AI expert")
+emb_str = "[" + ",".join(map(str, query_emb)) + "]"
+results = kg.query(f"""
+    SELECT
+        company_name,
+        COUNT(DISTINCT person_name) as expert_count,
+        AVG(similarity) as avg_similarity
+    FROM GRAPH_TABLE (knowledge_graph
+        MATCH (person:nodes)-[e:edges]->(company:nodes)
+        WHERE e.edge_type = 'WORKS_AT'
+        COLUMNS (
+            json_extract_string(person.properties, 'name') as person_name,
+            json_extract_string(company.properties, 'name') as company_name,
+            1.0 - (array_cosine_distance(person.embedding, {emb_str}::FLOAT[{kg.embedding_dim}]) / 2.0) as similarity
+        )
+    )
+    WHERE similarity > 0.5
+    GROUP BY company_name
+    HAVING COUNT(*) >= 2
+""")
 
-**Note:** If you don't have `uv` installed, the script will install it automatically.
-
-### 3. Activate the Virtual Environment
-
-```bash
-source .venv/bin/activate
-```
-
-You should see `(.venv)` in your terminal prompt.
-
-### 4. Verify Installation
-
-```bash
-# Quick test
-python3 -c "from chimeradb import KnowledgeGraph; print('✓ Installation successful!')"
+kg.close()
 ```
 
 ## Running the Examples
 
-All examples use timestamped databases to ensure a fresh start every time.
-
-### Example 1: Getting Started (Basic Operations)
+### Example 1: Getting Started
 
 ```bash
-python3 examples/01_getting_started.py
+python examples/01_getting_started.py
 ```
 
-**What it demonstrates:**
-- Creating nodes with Cypher CREATE
-- Creating nodes with Python API
-- Creating nodes with SQL INSERT
-- Querying with Cypher MATCH
-- Querying with SQL
-- When to use each approach
+Demonstrates basic operations with the Python API.
 
-**Runtime:** ~5 seconds
-
-### Example 2: Supply Chain Analytics
+### Example 2: Real-World Workflow
 
 ```bash
-python3 examples/02_basic.py
+python examples/02_basic.py
 ```
 
-**What it demonstrates:**
-- **Real-world workflow**: Semantic search → Graph discovery → SQL analytics
-- Search for "port in shanghai" without knowing exact ID
-- Discover companies shipping through that port
-- Traverse the full supply chain network
-- Aggregate shipment statistics with SQL
+Shows the full workflow: semantic search → graph traversal → SQL analytics on a supply chain dataset.
 
-**Scenario:** "Which companies ship through Shanghai?"
-- Start with natural language query
-- Find entities by semantic meaning
-- Follow graph relationships
-- Analyze data with powerful SQL
-
-**Runtime:** ~10 seconds (includes embedding generation)
-
-**Note:** First run downloads the sentence-transformers model (~80MB)
-
-### Example 3: Advanced Graph Analysis
+### Example 3: Research Papers
 
 ```bash
-python3 examples/03_advanced.py
+python examples/03_advanced.py
 ```
 
-**What it demonstrates:**
-- Research paper knowledge graph
-- Semantic search for relevant papers
-- Connected component detection
-- Graph algorithms (BFS)
-- Complex SQL queries for graph analysis
+Graph analysis on research papers with citations.
 
-**Runtime:** ~15 seconds
-
-## Understanding the Output
-
-Each example generates a timestamped database file:
-```
-examples/getting_started_20241123_143022.db
-examples/supply_chain_20241123_143045.db
-examples/research_papers_20241123_143112.db
-```
-
-These files persist between runs, allowing you to inspect them:
+### Example 4: Industrial IoT (Recommended!)
 
 ```bash
-# Inspect database with sqlite3
-sqlite3 examples/getting_started_20241123_143022.db
-
-# List tables
-.tables
-
-# View nodes
-SELECT id, labels, properties FROM graph_nodes;
-
-# Exit
-.quit
+python examples/04_industrial_iot.py
 ```
 
-## Clean Up Old Databases
+Production-ready example showing how to:
+- Store metadata (embedded) separately from timeseries data (not embedded)
+- Join knowledge graph with timeseries using SQL
+- Demonstrates the full LLM reasoning workflow
+
+## Development Setup (From Source)
 
 ```bash
-# Remove all example databases
-rm -f examples/*.db
-
-# Or keep only the most recent
-ls -t examples/*.db | tail -n +4 | xargs rm -f
+git clone https://github.com/codimusmaximus/chimeradb.git
+cd chimeradb
+pip install -e .
 ```
 
-## Next Steps
+## Key Concepts
 
-### Create Your Own Knowledge Graph
+### 1. Auto-Embeddings
+
+By default, embeddings are automatically generated using `distilbert-base-uncased`:
 
 ```python
-from chimeradb import KnowledgeGraph
+kg = KnowledgeGraph("my.db")  # Auto-embeddings enabled
 
-# Create a new graph
-kg = KnowledgeGraph("my_graph.db")
+# Specify which field(s) to embed
+kg.add_entity("doc1", {
+    "title": "Machine Learning",
+    "content": "A guide to ML",
+    "author": "Alice"
+}, embed_field="content")  # Only embed 'content'
 
-# Add some data
-kg.add_entity("1", labels=["Person"], properties={"name": "Alice"})
-kg.add_entity("2", labels=["Person"], properties={"name": "Bob"})
-kg.add_relationship("1", "2", "KNOWS")
+# Or embed multiple fields
+kg.add_entity("doc2", {
+    "title": "Deep Learning",
+    "content": "Neural networks guide"
+}, embed_field=["title", "content"])  # Concatenate both
 
-# Query it
-result = kg.conn.execute(
-    "SELECT cypher_execute(?)", 
-    ("MATCH (p:Person) RETURN p",)
-).fetchone()
-
-print(result)
-kg.close()
+# Or use default (concatenate all string fields)
+kg.add_entity("doc3", {
+    "title": "NLP",
+    "content": "Text processing"
+})  # Embeds: "Text processing NLP" (sorted alphabetically)
 ```
 
-### With Semantic Search
+### 2. Disable Embeddings
+
+For pure graph/SQL use cases without semantic search:
 
 ```python
-from chimeradb import KnowledgeGraph
+kg = KnowledgeGraph("my.db", embedding_model=None)
+```
 
-# Auto-embeddings enabled by default!
-kg = KnowledgeGraph("semantic_graph.db")
+### 3. Custom Embedding Function
 
-# Add entities (embeddings generated automatically)
-kg.add_entity(
-    "doc1",
-    labels=["Document"],
-    properties={"text": "Machine learning and artificial intelligence"},
-    embed_field="text"  # Which field to embed
-)
+```python
+def my_embedder(text: str) -> List[float]:
+    # Your custom embedding logic
+    return openai.embeddings.create(input=text, model="text-embedding-3-small")
 
-# Search by meaning
-results = kg.search("AI and ML", top_k=5)
-print(results)
+kg = KnowledgeGraph("my.db", embedding_function=my_embedder)
+```
 
-kg.close()
+### 4. SQL/PGQ Graph Queries
+
+ChimeraDB uses SQL/PGQ (SQL:2023 standard) for graph pattern matching:
+
+```python
+# Find all people working at companies
+results = kg.query("""
+    SELECT person_name, company_name
+    FROM GRAPH_TABLE (knowledge_graph
+        MATCH (person:nodes)-[e:edges]->(company:nodes)
+        WHERE e.edge_type = 'WORKS_AT'
+          AND company.labels LIKE '%Company%'
+        COLUMNS (
+            json_extract_string(person.properties, 'name') as person_name,
+            json_extract_string(company.properties, 'name') as company_name
+        )
+    )
+""")
+```
+
+See [DuckPGQ documentation](https://duckpgq.org/documentation/sql_pgq/) for full SQL/PGQ syntax.
+
+### 5. Vector Similarity Search
+
+```python
+# Search by meaning (cosine similarity)
+results = kg.search("artificial intelligence researcher", top_k=10)
+
+# Filter by labels
+results = kg.search("AI expert", top_k=10, labels=["Person"])
+
+# Access results
+for r in results:
+    print(f"ID: {r['id']}")
+    print(f"Similarity: {r['similarity']}")  # 0.0-1.0
+    print(f"Properties: {r['properties']}")
+```
+
+### 6. Distance Metrics
+
+```python
+# Cosine distance (default, best for most use cases)
+kg = KnowledgeGraph("my.db", distance_metric="cosine")
+
+# L2 squared distance
+kg = KnowledgeGraph("my.db", distance_metric="l2sq")
+
+# Inner product
+kg = KnowledgeGraph("my.db", distance_metric="ip")
 ```
 
 ## Troubleshooting
 
-### Issue: `ModuleNotFoundError: No module named 'chimeradb'`
+### Issue: `ModuleNotFoundError: No module named 'transformers'`
 
-**Solution:** Install the package in editable mode:
+**Solution:** Install transformers and torch:
 ```bash
-source .venv/bin/activate
-uv pip install -e .
+pip install transformers torch
 ```
 
-### Issue: `RuntimeError: Could not load graph extension`
+### Issue: `RuntimeError: Failed to load duckpgq extension`
 
-**Solution:** Extensions weren't downloaded. Run setup again:
+**Solution:** This usually means DuckDB version incompatibility. ChimeraDB requires DuckDB 1.1.3+:
 ```bash
-./setup.sh
+pip install "duckdb>=1.1.3,<1.2.0"
 ```
-
-### Issue: `Failed to open root iterator` (Cypher errors)
-
-**Possible causes:**
-1. **Old database with corrupted schema** - Use timestamped databases (examples do this automatically)
-2. **Unsupported Cypher pattern** - See [LIMITATIONS.md](LIMITATIONS.md) for workarounds
-3. **Quote escaping issue** - Use parameterized queries:
-   ```python
-   # ✓ Correct
-   kg.conn.execute("SELECT cypher_execute(?)", ("CREATE (p:Person {name: 'Alice'})",))
-   
-   # ✗ Wrong
-   kg.conn.execute('SELECT cypher_execute(\'CREATE (p:Person {name: "Alice"})\')')
-   ```
 
 ### Issue: Embeddings taking too long
 
-**Solution:** Use a smaller/faster model or reduce batch size:
+**Solution:** Use a smaller/faster model:
 ```python
 kg = KnowledgeGraph(
-    embedding_model="all-MiniLM-L6-v2",  # Faster than all-mpnet-base-v2
-    embedding_dim=384
+    "my.db",
+    embedding_model="distilbert-base-uncased"  # Faster than larger models
 )
+```
+
+Or disable embeddings if you don't need semantic search:
+```python
+kg = KnowledgeGraph("my.db", embedding_model=None)
 ```
 
 ## Documentation
 
 - **[README.md](../README.md)** - Overview and features
-- **[LIMITATIONS.md](LIMITATIONS.md)** - Cypher limitations and SQL workarounds
-- **[CYPHER_GUIDE.md](CYPHER_GUIDE.md)** - Cypher usage examples
-- **[LABELS_GUIDE.md](LABELS_GUIDE.md)** - Label handling best practices
+- **[SQL/PGQ Guide](https://duckpgq.org/documentation/sql_pgq/)** - Graph query syntax
+- **[DuckDB VSS Extension](https://duckdb.org/2024/05/03/vector-similarity-search-vss)** - Vector similarity search
+- **[Examples](../examples/)** - Working code examples
 
 ## Support
 
-- 🐛 **Issues:** Report bugs on GitHub Issues
-- 📖 **Examples:** See `examples/` directory
+- 🐛 **Issues:** [GitHub Issues](https://github.com/codimusmaximus/chimeradb/issues)
+- 📖 **Examples:** [examples/](../examples/) directory
 - 💬 **Questions:** GitHub Discussions
 
 ---
 
 **You're all set!** 🎉
 
-Start with `python3 examples/01_getting_started.py` and explore from there.
+Try the examples: `python examples/01_getting_started.py`
