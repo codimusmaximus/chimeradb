@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="logo.png" alt="ChimeraDB Logo" width="100%"/>
-</p>
-
 # ChimeraDB
 
 **Semantic search + graph queries + SQL analytics. All in one DuckDB file.**
