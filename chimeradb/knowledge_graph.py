@@ -396,7 +396,7 @@ class KnowledgeGraph:
         direction: str = "outgoing"
     ) -> List[Dict[str, Any]]:
         """
-        Traverse the graph from a starting node.
+        Traverse the graph from a starting node using SQL/PGQ GRAPH_TABLE.
 
         Args:
             start_id: Starting node ID
@@ -407,48 +407,62 @@ class KnowledgeGraph:
         Returns:
             List of reachable nodes with depth info
         """
-        # Build CTE based on direction
+        # Build pattern based on direction
         if direction == "outgoing":
-            join_cond = "c.id = e.from_id"
-            next_id = "e.to_id"
+            pattern = "(start:nodes)-[e:edges]->(target:nodes)"
         elif direction == "incoming":
-            join_cond = "c.id = e.to_id"
-            next_id = "e.from_id"
+            pattern = "(start:nodes)<-[e:edges]-(target:nodes)"
         else:  # both
-            join_cond = "(c.id = e.from_id OR c.id = e.to_id)"
-            next_id = "CASE WHEN c.id = e.from_id THEN e.to_id ELSE e.from_id END"
+            pattern = "(start:nodes)-[e:edges]-(target:nodes)"
 
-        rel_filter = f"AND e.edge_type = '{relation_type}'" if relation_type else ""
+        # Build WHERE clause
+        where_clauses = [f"start.id = '{start_id}'"]
+        if relation_type:
+            where_clauses.append(f"e.edge_type = '{relation_type}'")
+        where_clause = " AND ".join(where_clauses)
 
-        query = f"""
-            WITH RECURSIVE traversal(id, depth, path) AS (
-                SELECT id, 0, id
-                FROM nodes WHERE id = ?
-                UNION
-                SELECT n.id, c.depth + 1, c.path || ',' || n.id
-                FROM traversal c
-                JOIN edges e ON {join_cond}
-                JOIN nodes n ON n.id = {next_id}
-                WHERE c.depth < ? {rel_filter}
-                  AND position(',' || n.id || ',' IN ',' || c.path || ',') = 0
-            )
-            SELECT DISTINCT t.id, t.depth, n.properties
-            FROM traversal t
-            JOIN nodes n ON t.id = n.id
-            WHERE t.depth > 0
-            ORDER BY t.depth, t.id
-        """
+        # Simple approach: Just get 1-hop neighbors, then recurse manually
+        # DuckPGQ doesn't support variable-length paths natively yet
+        visited = set()
+        results = []
+        current_level = [start_id]
 
-        results = self.conn.execute(query, [start_id, max_depth]).fetchall()
+        for depth in range(1, max_depth + 1):
+            if not current_level:
+                break
 
-        return [
-            {
-                "id": row[0],
-                "depth": row[1],
-                "properties": json.loads(row[2]) if row[2] else {}
-            }
-            for row in results
-        ]
+            # Get neighbors for all nodes in current level
+            ids_list = "', '".join(current_level)
+
+            query = f"""
+                SELECT DISTINCT target_id, target_properties
+                FROM GRAPH_TABLE (knowledge_graph
+                    MATCH {pattern}
+                    WHERE start.id IN ('{ids_list}')
+                      {f"AND e.edge_type = '{relation_type}'" if relation_type else ""}
+                    COLUMNS (
+                        target.id as target_id,
+                        target.properties as target_properties
+                    )
+                )
+            """
+
+            neighbors = self.conn.execute(query).fetchall()
+            next_level = []
+
+            for node_id, props in neighbors:
+                if node_id not in visited:
+                    visited.add(node_id)
+                    results.append({
+                        "id": node_id,
+                        "depth": depth,
+                        "properties": json.loads(props) if props else {}
+                    })
+                    next_level.append(node_id)
+
+            current_level = next_level
+
+        return results
 
     def query(self, sql: str, params: Optional[Tuple] = None) -> List[Tuple]:
         """
